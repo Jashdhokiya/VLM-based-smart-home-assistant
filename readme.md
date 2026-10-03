@@ -162,7 +162,7 @@ pytest -o pythonpath=. tests -v
 mosquitto -c mosquitto.conf -v
 ```
 
-### Step 4: Run the Assistant
+### Step 4: Run the Assistant (CLI Loop)
 ```bash
 python main.py
 ```
@@ -176,6 +176,17 @@ python main.py
    - *"Turn off Light 1"*
    - *"Turn on the light near the window"* (resolved through spatial reasoning)
    - *"Exit"* (cleanly stops the assistant)
+
+### Step 5: Run the Web Dashboard
+Launch the real-time web dashboard for device monitoring, interactive toggles, live mic input, and spatial telemetry:
+```bash
+python server.py
+```
+Open [http://localhost:8000](http://localhost:8000) in your browser:
+- **Interactive Device Matrix**: View appliances, their ON/OFF states, GPIO pins, and click toggles.
+- **Voice Control Orb**: Click the microphone button to speak natural language commands (supports Browser Web Speech API, Groq Whisper cloud transcription, or laptop mic).
+- **Spatial Awareness & Scene View**: Live inspection of spatial layout grounded in your camera frame.
+- **Telemetry Stream**: Real-time WebSocket activity terminal tracking sub-millisecond MQTT ACKs and LLM decision latency.
 
 ---
 

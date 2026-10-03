@@ -70,13 +70,13 @@ def record_audio():
                 return WAVE_OUTPUT_FILENAME
             raise RuntimeError(f"Microphone recording failed and no fallback audio found: {e}") from e
 
-def transcribe():
-    audio_file = record_audio()
+def transcribe_file(audio_file_path: str) -> str:
+    """Transcribes a given audio file path using Groq Whisper API."""
     api_key = os.getenv("GROQ_API_KEY")
     whisper_model = os.getenv("GROQ_WHISPER_MODEL", "whisper-large-v3")
     client = Groq(api_key=api_key)
 
-    with open(audio_file, "rb") as file:
+    with open(audio_file_path, "rb") as file:
         with metrics.stage("stt_api"):
             transcription = client.audio.transcriptions.create(
                 file=file,
@@ -88,5 +88,9 @@ def transcribe():
                 temperature=0.0
             )
 
-        print(f"[TRANSCRIPTION] USER: {transcription.text}")
-        return transcription.text
+    print(f"[TRANSCRIPTION] USER: {transcription.text}")
+    return transcription.text
+
+def transcribe():
+    audio_file = record_audio()
+    return transcribe_file(audio_file)

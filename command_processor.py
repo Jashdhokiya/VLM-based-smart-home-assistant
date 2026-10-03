@@ -64,8 +64,15 @@ def response(query):
     _conversation_history.append({"role": "assistant", "content": reply})
     return reply
 
-def generate(spatial_information):
+def init_conversation(spatial_information=None):
     global _conversation_history
+    if spatial_information is None:
+        try:
+            with open("spatial_information.txt", "r", encoding="utf-8") as f:
+                spatial_information = f.read()
+        except Exception:
+            spatial_information = "Light1 is on the left. Light2 is on the right."
+
     devices = mqtt_executor.enabled_devices()
     devices_str = ", ".join(devices)
 
@@ -85,6 +92,53 @@ def generate(spatial_information):
     _conversation_history = [
         {"role": "system", "content": system_prompt}
     ]
+    return _conversation_history
+
+def process_single_command(comm: str, spatial_information=None, speak: bool = False) -> dict:
+    """Processes a single natural language command, invokes LLM, parses commands, and executes them."""
+    global _conversation_history
+    if not _conversation_history:
+        init_conversation(spatial_information)
+
+    command_id = uuid.uuid4().hex[:6]
+    start_time = time.perf_counter()
+
+    with metrics.stage("llm_decision", command_id=command_id):
+        res = response(comm)
+
+    with metrics.stage("parse", command_id=command_id):
+        valid, rejected = safe_parse.parse_device_commands(res, allowed=mqtt_executor.enabled_devices())
+
+    executed = {}
+    for device, cmd in valid.items():
+        if speak:
+            text_to_speech(f"Turning {cmd} the device {device}")
+        success = mqtt_executor.execute(device, cmd)
+        executed[device] = {"command": cmd, "success": success}
+
+    elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+
+    tts_msg = ""
+    if valid:
+        tts_parts = [f"Turning {cmd} {dev}" for dev, cmd in valid.items()]
+        tts_msg = ", and ".join(tts_parts)
+    else:
+        tts_msg = "No matching device action recognized."
+
+    return {
+        "command_id": command_id,
+        "query": comm,
+        "raw_response": res,
+        "valid_commands": valid,
+        "rejected": rejected,
+        "executed": executed,
+        "tts_message": tts_msg,
+        "duration_ms": elapsed_ms
+    }
+
+def generate(spatial_information):
+    global _conversation_history
+    init_conversation(spatial_information)
 
     provider = os.getenv("AI_PROVIDER", "groq").lower()
     print(f"[COMMAND] Command Processor started (Provider: {provider.upper()}).")
@@ -101,29 +155,12 @@ def generate(spatial_information):
             break
 
         print(f"[TRANSCRIPTION] User: {comm}")
-        command_id = uuid.uuid4().hex[:6]
-
-        try:
-            with metrics.stage("llm_decision", command_id=command_id):
-                res = response(comm)
-        except Exception as e:
-            print(f"[COMMAND] [ERROR] LLM API call failed: {e}")
-            continue
-
-        print(f"[COMMAND] LLM raw output: {res}")
-
-        with metrics.stage("parse", command_id=command_id):
-            valid, rejected = safe_parse.parse_device_commands(res, allowed=mqtt_executor.enabled_devices())
-
-        if rejected:
-            print(f"[PARSE] Rejected items: {rejected}")
-
-        if not valid:
+        result = process_single_command(comm, spatial_information, speak=True)
+        print(f"[COMMAND] LLM raw output: {result['raw_response']}")
+        if result['rejected']:
+            print(f"[PARSE] Rejected items: {result['rejected']}")
+        if not result['valid_commands']:
             print("[PARSE] No valid executable commands found in response.")
-
-        for device, cmd in valid.items():
-            text_to_speech(f"Turning {cmd} the device {device}")
-            mqtt_executor.execute(device, cmd)
 
         print("Tell your next command in 3 seconds..")
         for i in range(3):

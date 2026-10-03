@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>INOT Mark1 | Vision-Language-Action Smart Home Assistant</title>
+  <meta name="description" content="Intelligent spatial voice and vision dashboard for IoT appliances via Groq AI, Mosquitto MQTT, and ESP32 hardware.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="dark-theme">
+  <!-- Ambient background glow elements -->
+  <div class="ambient-glow glow-cyan" aria-hidden="true"></div>
+  <div class="ambient-glow glow-violet" aria-hidden="true"></div>
+  <div class="ambient-glow glow-amber" aria-hidden="true"></div>
+
+  <!-- Header / Navigation Bar -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand-group">
+        <div class="brand-logo-wrap">
+          <div class="brand-logo-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <span class="pulse-dot active" title="System Live"></span>
+        </div>
+        <div class="brand-titles">
+          <h1 class="brand-title">INOT <span class="brand-tag">Mark1</span></h1>
+          <p class="brand-subtitle">VLA Edge-Cloud Smart Assistant &bull; arXiv:2504.13942</p>
+        </div>
+      </div>
+
+      <!-- Live Telemetry Badges -->
+      <div class="telemetry-bar">
+        <div class="telemetry-pill" id="pillEsp32" title="ESP32 Firmware Status">
+          <span class="status-indicator" id="indEsp32"></span>
+          <span class="pill-label">ESP32</span>
+          <span class="pill-val" id="valEsp32">Checking...</span>
+        </div>
+        <div class="telemetry-pill" id="pillMqtt" title="MQTT Broker Status">
+          <span class="status-indicator" id="indMqtt"></span>
+          <span class="pill-label">MQTT</span>
+          <span class="pill-val" id="valMqtt">Connecting...</span>
+        </div>
+        <div class="telemetry-pill" id="pillAi" title="Active AI Provider">
+          <span class="status-indicator online"></span>
+          <span class="pill-label">AI</span>
+          <span class="pill-val" id="valAi">Groq Qwen 3.8</span>
+        </div>
+        <button id="btnDiagnostics" class="btn-icon" title="View System Architecture & Preflight">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Layout -->
+  <main class="app-main">
+    <div class="dashboard-grid">
+
+      <!-- SECTION 1: Voice & AI Intelligence Center (HERO) -->
+      <section class="card hero-voice-card" id="voiceControlSection">
+        <div class="card-header">
+          <div class="header-left">
+            <span class="header-icon-wrap violet-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+              </svg>
+            </span>
+            <div>
+              <h2 class="section-title">Voice & Natural Language Control</h2>
+              <p class="section-desc">Speak naturally or type. Spatial VLM maps intent to appliances in real-time.</p>
+            </div>
+          </div>
+          <div class="voice-mode-selector">
+            <label for="selectVoiceEngine" class="sr-only">Voice STT Engine</label>
+            <select id="selectVoiceEngine" class="select-dropdown" title="Choose Speech Recognition Mode">
+              <option value="browser" selected>⚡ Browser Speech (Zero Latency)</option>
+              <option value="whisper">🎙️ Groq Whisper (Cloud High-Accuracy)</option>
+              <option value="server">💻 Host Laptop Mic (PyAudio)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="voice-center-body">
+          <!-- Big Glowing Microphone Button -->
+          <div class="mic-orb-container">
+            <div class="mic-ripple-ring" id="micRipple1"></div>
+            <div class="mic-ripple-ring" id="micRipple2"></div>
+            <button id="btnVoiceRecord" class="mic-button" aria-label="Start Voice Recording" title="Click to start microphone">
+              <div class="mic-inner-core">
+                <svg id="micIconIdle" class="mic-svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                  <line x1="12" y1="19" x2="12" y2="23"></line>
+                  <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+                <div id="micWaveAnimation" class="sound-wave-bars hidden" aria-hidden="true">
+                  <span></span><span></span><span></span><span></span><span></span>
+                </div>
+              </div>
+            </button>
+            <p class="mic-status-label" id="micStatusText">Click to Speak</p>
+          </div>
+
+          <!-- Audio Visualizer Canvas -->
+          <div class="visualizer-wrapper">
+            <canvas id="audioVisualizerCanvas" width="500" height="60"></canvas>
+          </div>
+
+          <!-- Real-Time Transcript & Reasoning Display -->
+          <div class="ai-feedback-container" id="aiFeedbackContainer">
+            <div class="transcript-row">
+              <span class="transcript-badge">Voice Input:</span>
+              <p class="transcript-text" id="liveTranscript">"Waiting for voice command or prompt..."</p>
+            </div>
+            
+            <div class="reasoning-row" id="reasoningRow">
+              <div class="reasoning-meta">
+                <span class="reasoning-badge">AI Decision:</span>
+                <span class="latency-tag" id="lastCommandLatency">⚡ 0ms</span>
+              </div>
+              <div class="reasoning-content" id="aiReasoningContent">
+                <span class="reasoning-placeholder">LLM action dictionary and spatial mappings will render here.</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Text Command Bar Fallback -->
+          <form id="textCommandForm" class="command-input-form" onsubmit="return false;">
+            <div class="input-glow-wrapper">
+              <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input type="text" id="inputCommandQuery" class="command-input" placeholder="Or type e.g. 'Turn on the left light', 'I am going to sleep'..." autocomplete="off">
+              <button type="submit" id="btnSubmitCommand" class="btn-submit" aria-label="Send Command">
+                <span>Run</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+              </button>
+            </div>
+          </form>
+
+          <!-- Prompt Quick Chips -->
+          <div class="quick-chips-wrapper">
+            <span class="chips-title">Quick Commands:</span>
+            <div class="chips-list">
+              <button class="prompt-chip" data-cmd="Turn on the left light">💡 Left Light On</button>
+              <button class="prompt-chip" data-cmd="Turn on the light near the window">🪟 Light Near Window</button>
+              <button class="prompt-chip" data-cmd="I am going to sleep">🌙 Sleep Mode</button>
+              <button class="prompt-chip" data-cmd="I completed studying">📚 Finished Studying</button>
+              <button class="prompt-chip" data-cmd="Leaving the room">🚪 Leaving Room</button>
+              <button class="prompt-chip" data-cmd="Turn on all lights">☀️ All Lights On</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 2: Interactive Smart Appliances Matrix -->
+      <section class="card appliances-card" id="appliancesSection">
+        <div class="card-header">
+          <div class="header-left">
+            <span class="header-icon-wrap cyan-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                <line x1="8" y1="21" x2="16" y2="21"></line>
+                <line x1="12" y1="17" x2="12" y2="21"></line>
+              </svg>
+            </span>
+            <div>
+              <h2 class="section-title">Connected Devices Matrix</h2>
+              <p class="section-desc">Toggle physical or simulated relays via Mosquitto MQTT &amp; ESP32 GPIO.</p>
+            </div>
+          </div>
+
+          <!-- Batch Action Controls -->
+          <div class="batch-controls">
+            <button id="btnBatchAllOn" class="btn-secondary" title="Turn on all enabled appliances">All ON</button>
+            <button id="btnBatchAllOff" class="btn-secondary" title="Turn off all appliances">All OFF</button>
+            <button id="btnBatchStudy" class="btn-secondary" title="Study Mode (Left Desk Light)">Study Mode</button>
+          </div>
+        </div>
+
+        <!-- Devices Grid -->
+        <div class="devices-grid" id="devicesGrid">
+          <!-- Dynamically populated by app.js -->
+          <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Scanning MQTT device topology...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 3: Spatial Perception & Scene Context -->
+      <section class="card spatial-card" id="spatialSection">
+        <div class="card-header">
+          <div class="header-left">
+            <span class="header-icon-wrap amber-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                <circle cx="12" cy="13" r="4"></circle>
+              </svg>
+            </span>
+            <div>
+              <h2 class="section-title">Spatial Vision &amp; Scene Awareness</h2>
+              <p class="section-desc">Visual grounding derived from scene camera capture &amp; Groq Qwen reasoning.</p>
+            </div>
+          </div>
+          <button id="btnRefreshSpatial" class="btn-icon" title="Refresh spatial layout">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <polyline points="1 20 1 14 7 14"></polyline>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+          </button>
+        </div>
+
+        <div class="spatial-body">
+          <div class="spatial-scene-preview" id="sceneImageContainer">
+            <img id="sceneImage" src="/api/scene-image" alt="Annotated Scene View" class="scene-img" onerror="this.parentElement.classList.add('no-image');">
+            <div class="no-image-fallback">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+              </svg>
+              <span>Scene Image Available via Webcam Capture</span>
+            </div>
+          </div>
+
+          <div class="spatial-text-container">
+            <div class="spatial-text-header">
+              <span class="text-caption">Learned Spatial Grounding (spatial_information.txt)</span>
+            </div>
+            <pre class="spatial-text-content" id="spatialTextContent">Loading spatial grounding description...</pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 4: Live Activity Log & Latency Telemetry -->
+      <section class="card activity-card" id="activitySection">
+        <div class="card-header">
+          <div class="header-left">
+            <span class="header-icon-wrap green-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+              </svg>
+            </span>
+            <div>
+              <h2 class="section-title">Telemetry &amp; Execution Stream</h2>
+              <p class="section-desc">Live WebSocket feed of MQTT publishes, ESP32 ACKs, and sub-millisecond timings.</p>
+            </div>
+          </div>
+          <button id="btnClearLog" class="btn-text-small" title="Clear event log">Clear</button>
+        </div>
+
+        <div class="activity-terminal" id="activityTerminal">
+          <div class="terminal-entry system">
+            <span class="time">[INIT]</span>
+            <span class="content">Web dashboard initialized. Subscribed to MQTT topics and WebSocket stream.</span>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Diagnostics & Architecture Modal -->
+  <div class="modal-backdrop hidden" id="diagnosticsModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modalTitle">System Architecture &amp; Hardware Diagnostics</h3>
+        <button id="btnCloseModal" class="btn-icon" aria-label="Close Modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="diag-section">
+          <h4>ESP32 Pinout &amp; MQTT Routing</h4>
+          <table class="diag-table">
+            <thead>
+              <tr>
+                <th>Device</th>
+                <th>GPIO</th>
+                <th>MQTT Set Topic</th>
+                <th>MQTT State (ACK)</th>
+                <th>Spatial Position</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Light 1</strong></td>
+                <td><span class="badge-pin">GPIO 18</span></td>
+                <td><code>inot/devices/light1/set</code></td>
+                <td><code>inot/devices/light1/state</code></td>
+                <td>Left side (Desk)</td>
+              </tr>
+              <tr>
+                <td><strong>Light 2</strong></td>
+                <td><span class="badge-pin">GPIO 19</span></td>
+                <td><code>inot/devices/light2/set</code></td>
+                <td><code>inot/devices/light2/state</code></td>
+                <td>Right side (Window)</td>
+              </tr>
+              <tr>
+                <td><strong>Light 3</strong></td>
+                <td><span class="badge-pin">GPIO 21</span></td>
+                <td><code>inot/devices/light3/set</code></td>
+                <td><code>inot/devices/light3/state</code></td>
+                <td>Center / Auxiliary</td>
+              </tr>
+              <tr>
+                <td><strong>Light 4</strong></td>
+                <td><span class="badge-pin">GPIO 22</span></td>
+                <td><code>inot/devices/light4/set</code></td>
+                <td><code>inot/devices/light4/state</code></td>
+                <td>Corner / Accent</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="diag-section">
+          <h4>VLA Pipeline Flow</h4>
+          <p class="diag-note">Microphone &rarr; Whisper &rarr; Qwen 3.8 (VLM) + Spatial Context &rarr; Safe Parse &rarr; Mosquitto MQTT &rarr; ESP32 ACK.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Audio Chimes & Synthesis Helpers (Generated with Web Audio API in app.js) -->
+  <script src="/static/app.js"></script>
+</body>
+</html>
