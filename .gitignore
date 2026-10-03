@@ -1,0 +1,11 @@
+.env
+metadata.py
+spatial_information.txt
+annotated_image.jpg
+real_time_audio.wav
+images/current_scene.jpg
+logs/
+.venv/
+__pycache__/
+*.py[cod]
+esp32/config.h

@@ -1,0 +1,12 @@
+paho-mqtt>=2.0
+opencv-python
+python-dotenv
+requests
+matplotlib
+groq
+google-genai
+openai
+pyttsx3
+pyaudio
+psutil
+pytest
