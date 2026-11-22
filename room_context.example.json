@@ -1,0 +1,42 @@
+{
+  "room_name": "Bedroom",
+  "devices": [
+    {
+      "id": "light1",
+      "name": "Light 1",
+      "type": "light",
+      "x": 0.20,
+      "y": 0.35,
+      "zone": "desk",
+      "near": ["desk", "monitor"]
+    },
+    {
+      "id": "light2",
+      "name": "Light 2",
+      "type": "light",
+      "x": 0.80,
+      "y": 0.35,
+      "zone": "window",
+      "near": ["window", "curtain"]
+    },
+    {
+      "id": "fan1",
+      "name": "Ceiling Fan",
+      "type": "fan",
+      "x": 0.50,
+      "y": 0.15,
+      "zone": "center",
+      "near": ["bed"]
+    },
+    {
+      "id": "ac1",
+      "name": "Air Conditioner",
+      "type": "ac",
+      "x": 0.85,
+      "y": 0.10,
+      "zone": "window",
+      "near": ["window"]
+    }
+  ]
+}
+

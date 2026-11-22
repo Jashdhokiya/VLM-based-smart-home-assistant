@@ -3,9 +3,29 @@ metadata.py
 spatial_information.txt
 annotated_image.jpg
 real_time_audio.wav
+test_recording.wav
 images/current_scene.jpg
 logs/
 .venv/
 __pycache__/
 *.py[cod]
 inot_esp32/config.h
+
+# Vosk models (large, downloaded at setup)
+vosk-model-*/
+
+# Docker volumes
+mosquitto_data/
+mosquitto_log/
+ollama_data/
+
+# Room context (may contain private device info)
+room_context.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/

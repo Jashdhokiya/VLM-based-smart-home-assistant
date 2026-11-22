@@ -1,0 +1,22 @@
+[Unit]
+Description=INOT Mark1 Web Dashboard & API Server
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/home/%i/Mark1
+EnvironmentFile=/home/%i/Mark1/.env
+ExecStart=/home/%i/Mark1/.venv/bin/python server.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+TimeoutStopSec=10
+KillSignal=SIGINT
+
+[Install]
+WantedBy=multi-user.target
+

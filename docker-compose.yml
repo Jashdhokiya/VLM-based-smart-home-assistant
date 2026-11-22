@@ -1,0 +1,52 @@
+# ═══════════════════════════════════════════════════════════════════════
+# INOT Mark1 — Docker Compose for Raspberry Pi 4B
+#
+# Services:
+#   mosquitto  — Eclipse Mosquitto MQTT broker (TCP 1883 + WS 9001)
+#   ollama     — Local LLM inference server (port 11434)
+#
+# Usage:
+#   docker compose up -d
+#   docker compose exec ollama ollama pull qwen2.5:1.5b
+# ═══════════════════════════════════════════════════════════════════════
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: inot-mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    # Minimal RAM — Mosquitto uses < 10 MB
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: inot-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=-1
+      - OLLAMA_HOST=0.0.0.0
+    # 4 GB Pi: leave ~1.2 GB for OS + Python app
+    deploy:
+      resources:
+        limits:
+          memory: 2816M
+
+volumes:
+  mosquitto_data:
+  mosquitto_log:
+  ollama_data:
+

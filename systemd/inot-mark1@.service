@@ -1,0 +1,23 @@
+[Unit]
+Description=INOT Mark1 Smart Home Pipeline
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/home/%i/Mark1
+EnvironmentFile=/home/%i/Mark1/.env
+ExecStart=/home/%i/Mark1/.venv/bin/python pipeline.py --loop
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Graceful shutdown
+TimeoutStopSec=10
+KillSignal=SIGINT
+
+[Install]
+WantedBy=multi-user.target
+

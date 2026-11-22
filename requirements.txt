@@ -1,15 +1,39 @@
-paho-mqtt>=2.0
-opencv-python
-python-dotenv
-requests
-matplotlib
-groq
-google-genai
-openai
-pyttsx3
-pyaudio
-psutil
-pytest
-fastapi>=0.110.0
-uvicorn>=0.28.0
-python-multipart>=0.0.9
+# ═══════════════════════════════════════════════════════════════════════
+# INOT Mark1 — Python Dependencies
+#
+# Core:   works on both PC (amd64) and Raspberry Pi (arm64)
+# Extras: some packages are optional and only needed for specific backends
+# ═══════════════════════════════════════════════════════════════════════
+
+# ── Core ──────────────────────────────────────────────────────────────
+python-dotenv==1.1.0
+paho-mqtt>=2.0,<3.0
+fastapi>=0.110.0,<1.0
+uvicorn>=0.28.0,<1.0
+python-multipart>=0.0.9,<1.0
+httpx>=0.27.0,<1.0
+psutil>=5.9,<7.0
+
+# ── Testing ───────────────────────────────────────────────────────────
+pytest>=7.0,<9.0
+
+# ── STT / Audio ──────────────────────────────────────────────────────
+# Install ONE of these based on STT_BACKEND:
+#   pip install vosk               # STT_BACKEND=vosk
+#   pip install faster-whisper     # STT_BACKEND=faster_whisper
+#   pip install groq               # STT_BACKEND=groq (default)
+groq>=0.4,<1.0
+
+# ── LLM ───────────────────────────────────────────────────────────────
+# Ollama uses httpx (already listed above)
+# Groq uses groq (already listed above)
+
+# ── PC-only (not needed on Pi) ────────────────────────────────────────
+# opencv-python                   # Camera capture / annotation
+# pyttsx3                         # Text-to-speech
+# requests                        # Landing AI API
+# matplotlib                      # Plotting
+# google-genai                    # Gemini provider (optional)
+# openai                          # OpenAI provider (optional)
+# pyaudio                         # Mic recording alternative
+# sounddevice                     # Mic recording (lighter, arm64-ok)
