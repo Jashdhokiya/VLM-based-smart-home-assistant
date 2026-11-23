@@ -4,7 +4,12 @@ import pytest
 import safe_parse
 import mqtt_executor
 import metrics
-import camera_capture
+
+try:
+    import camera_capture
+    _HAS_CAMERA = True
+except ImportError:
+    _HAS_CAMERA = False
 
 def test_mqtt_defense_in_depth(monkeypatch):
     monkeypatch.setenv("MQTT_DRY_RUN", "true")
@@ -42,6 +47,7 @@ def test_metrics_csv_generation(tmp_path, monkeypatch):
         assert row[4] == "test_stage"
         assert row[6] == "testing"
 
+@pytest.mark.skipif(not _HAS_CAMERA, reason="camera_capture / OpenCV not available")
 def test_camera_validation_error(monkeypatch):
     # Set invalid camera index to trigger clean error
     monkeypatch.setenv("CAMERA_INDEX", "999")

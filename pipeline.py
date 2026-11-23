@@ -56,7 +56,9 @@ def _load_room_context() -> Dict[str, Any]:
     if _room_ctx is not None:
         return _room_ctx
 
-    ctx_path = Path(settings.room_context_path)
+    # Re-read settings each call so monkeypatching works in tests
+    from config import settings as _s
+    ctx_path = Path(_s.room_context_path)
     if ctx_path.exists():
         try:
             _room_ctx = room_context.load(ctx_path)
@@ -79,7 +81,7 @@ def _load_room_context() -> Dict[str, Any]:
                 "zone": "room",
                 "near": [],
             }
-            for i, name in enumerate(settings.enabled_devices)
+            for i, name in enumerate(_s.enabled_devices)
         ]
     }
     return _room_ctx

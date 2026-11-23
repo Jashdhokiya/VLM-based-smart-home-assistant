@@ -39,11 +39,15 @@ def test_fast_path_e2e(monkeypatch, room_context_file):
     monkeypatch.setenv("ROOM_CONTEXT_PATH", room_context_file)
     monkeypatch.setenv("ENABLED_DEVICES", "Light1,Light2")
 
-    # Force reload
+    # Force reload settings and pipeline room context cache
+    import config
+    new_settings = config.Settings.load()
+    monkeypatch.setattr(config, "settings", new_settings)
+
     import pipeline
     pipeline._room_ctx = None
-    import config
-    monkeypatch.setattr(config, "settings", config.Settings.load())
+    # Also patch pipeline's own reference to settings
+    monkeypatch.setattr(pipeline, "settings", new_settings, raising=False)
 
     result = pipeline.process_command("turn on light 1")
 
@@ -84,10 +88,13 @@ def test_wav_file_pipeline(monkeypatch, room_context_file):
     monkeypatch.setenv("MQTT_DRY_RUN", "true")
     monkeypatch.setenv("ROOM_CONTEXT_PATH", room_context_file)
 
+    import config
+    new_settings = config.Settings.load()
+    monkeypatch.setattr(config, "settings", new_settings)
+
     import pipeline
     pipeline._room_ctx = None
-    import config
-    monkeypatch.setattr(config, "settings", config.Settings.load())
+    monkeypatch.setattr(pipeline, "settings", new_settings, raising=False)
 
     wav_file = str(Path(__file__).parent / "fixtures" / "test_command.wav")
 

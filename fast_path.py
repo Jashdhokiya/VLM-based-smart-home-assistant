@@ -99,8 +99,8 @@ def _resolve_target(
     if matched_by_zone:
         return matched_by_zone
 
-    # 5. "near X" pattern
-    near_match = re.match(r"(?:near|by|next\s+to|beside)\s+(.+)", phrase)
+    # 5. "near X" pattern — also handles "the light near X", "device near X"
+    near_match = re.search(r"(?:near|by|next\s+to|beside)\s+(.+)", phrase)
     if near_match:
         landmark = near_match.group(1).strip()
         matched_near = [d["id"] for d in room_context.devices_near(ctx, landmark)]

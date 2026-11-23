@@ -1,56 +1,87 @@
 """
-INOT Mark1 - Web Dashboard Server
-FastAPI backend providing REST and WebSocket APIs for device monitoring,
-interactive toggles, voice input processing (Groq Whisper + Web Speech),
-and real-time MQTT state synchronization.
+INOT Mark1 — Web Dashboard + Pi API Server
+
+FastAPI backend providing:
+  - REST API for device control, status, voice commands
+  - WebSocket for real-time MQTT state sync (PC dashboard)
+  - POST /context   receive room_context.json from onboarding PC
+  - GET  /state     snapshot of all device states (for digital twin init)
+  - GET  /context   retrieve current room context
+
+PC onboarding workflow still works (command_processor, transcriptor) when
+those modules are present.  On Pi they are absent and their endpoints
+degrade gracefully.
+
+Duplicate ConnectionManager class removed — only one instance.
 """
 
+from __future__ import annotations
+
+import csv
+import json
 import os
 import sys
-import subprocess
-from pathlib import Path
-
-# Auto-switch to project virtual environment if executed with global Python
-_base_dir = Path(__file__).resolve().parent
-_venv_python_win = _base_dir / ".venv" / "Scripts" / "python.exe"
-_venv_python_unix = _base_dir / ".venv" / "bin" / "python"
-_target_venv = _venv_python_win if _venv_python_win.exists() else (_venv_python_unix if _venv_python_unix.exists() else None)
-
-if _target_venv and Path(sys.executable).resolve() != _target_venv.resolve():
-    sys.exit(subprocess.call([str(_target_venv)] + sys.argv))
-
-import json
 import time
 import asyncio
 import tempfile
-import csv
-from typing import Dict, List, Set, Optional
 from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Dict, List, Optional, Set
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, HTTPException
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import (
+    FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File,
+    HTTPException, Request,
+)
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 load_dotenv()
 
 import mqtt_executor
-import command_processor
-import transcriptor
 import safe_parse
 import metrics
+
+# PC-only legacy modules are imported lazily inside endpoints if needed
+_command_processor = None
+_transcriptor = None
+
+def _get_command_processor():
+    global _command_processor
+    if _command_processor is None:
+        try:
+            import command_processor
+            _command_processor = command_processor
+        except Exception as e:
+            print(f"[SERVER] [DEBUG] command_processor unavailable: {e}")
+    return _command_processor
+
+def _get_transcriptor():
+    global _transcriptor
+    if _transcriptor is None:
+        try:
+            import transcriptor
+            _transcriptor = transcriptor
+        except Exception as e:
+            print(f"[SERVER] [DEBUG] transcriptor unavailable: {e}")
+    return _transcriptor
 
 # Project paths
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
+TWIN_DIR = BASE_DIR / "twin"
 STATIC_DIR.mkdir(exist_ok=True)
 SPATIAL_FILE = BASE_DIR / "spatial_information.txt"
 METRICS_FILE = BASE_DIR / "logs" / "metrics.csv"
 ANNOTATED_IMG = BASE_DIR / "annotated_image.jpg"
 SCENE_IMG = BASE_DIR / "images" / "current_scene.jpg"
 
+
+# ---------------------------------------------------------------------------
 # WebSocket connection manager
+# ---------------------------------------------------------------------------
+
 class ConnectionManager:
     def __init__(self):
         self.active_connections: Set[WebSocket] = set()
@@ -64,33 +95,45 @@ class ConnectionManager:
         self.active_connections.discard(websocket)
 
     async def broadcast(self, message: dict):
-        dead_connections = set()
-        for connection in list(self.active_connections):
+        dead = set()
+        for conn in list(self.active_connections):
             try:
-                await connection.send_json(message)
+                await conn.send_json(message)
             except Exception:
-                dead_connections.add(connection)
-        for dead in dead_connections:
-            self.active_connections.discard(dead)
+                dead.add(conn)
+        for c in dead:
+            self.active_connections.discard(c)
 
     def threadsafe_broadcast(self, message: dict):
         if self.loop and self.loop.is_running():
             asyncio.run_coroutine_threadsafe(self.broadcast(message), self.loop)
 
+
 manager = ConnectionManager()
+
+
+# ---------------------------------------------------------------------------
+# MQTT listener → WebSocket broadcast
+# ---------------------------------------------------------------------------
+
+def on_mqtt_event(event_type: str, data: dict):
+    manager.threadsafe_broadcast({
+        "type": event_type,
+        "timestamp": time.time(),
+        "data": data,
+    })
+
+
+mqtt_executor.add_state_listener(on_mqtt_event)
+
+
+# ---------------------------------------------------------------------------
+# App lifecycle
+# ---------------------------------------------------------------------------
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     manager.loop = asyncio.get_running_loop()
-    try:
-        spatial_text = ""
-        if SPATIAL_FILE.exists():
-            with open(SPATIAL_FILE, "r", encoding="utf-8") as f:
-                spatial_text = f.read()
-        command_processor.init_conversation(spatial_text)
-        print("[SERVER] Conversation processor initialized.")
-    except Exception as e:
-        print(f"[SERVER] [WARN] Conversation init error: {e}")
 
     try:
         mqtt_executor._get_client()
@@ -99,8 +142,12 @@ async def lifespan(app: FastAPI):
 
     yield
 
-# Initialize FastAPI
-app = FastAPI(title="INOT Mark1 Smart Home Dashboard", version="1.0.0", lifespan=lifespan)
+
+app = FastAPI(
+    title="INOT Mark1 Smart Home Dashboard",
+    version="2.0.0",
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -110,64 +157,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Project paths
-BASE_DIR = Path(__file__).resolve().parent
-STATIC_DIR = BASE_DIR / "static"
-STATIC_DIR.mkdir(exist_ok=True)
-SPATIAL_FILE = BASE_DIR / "spatial_information.txt"
-METRICS_FILE = BASE_DIR / "logs" / "metrics.csv"
-ANNOTATED_IMG = BASE_DIR / "annotated_image.jpg"
-SCENE_IMG = BASE_DIR / "images" / "current_scene.jpg"
 
-# WebSocket connection manager
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: Set[WebSocket] = set()
-        self.loop: Optional[asyncio.AbstractEventLoop] = None
+# ---------------------------------------------------------------------------
+# Device metadata (static; room_context drives the live registry)
+# ---------------------------------------------------------------------------
 
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.add(websocket)
-
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.discard(websocket)
-
-    async def broadcast(self, message: dict):
-        dead_connections = set()
-        for connection in list(self.active_connections):
-            try:
-                await connection.send_json(message)
-            except Exception:
-                dead_connections.add(connection)
-        for dead in dead_connections:
-            self.active_connections.discard(dead)
-
-    def threadsafe_broadcast(self, message: dict):
-        if self.loop and self.loop.is_running():
-            asyncio.run_coroutine_threadsafe(self.broadcast(message), self.loop)
-
-manager = ConnectionManager()
-
-# Hook into MQTT executor state listener
-def on_mqtt_event(event_type: str, data: dict):
-    payload = {
-        "type": event_type,
-        "timestamp": time.time(),
-        "data": data
-    }
-    manager.threadsafe_broadcast(payload)
-
-mqtt_executor.add_state_listener(on_mqtt_event)
-
-# Device spatial mapping metadata
-DEVICE_METADATA = {
+DEVICE_METADATA: Dict[str, dict] = {
     "Light1": {
         "label": "Light 1 (Left Desk)",
         "icon": "lightbulb",
         "pin": "GPIO 18",
         "room": "Study Area / Desk",
         "spatial_position": "Left",
-        "description": "Primary task illumination for left desk workspace"
+        "description": "Primary task illumination for left desk workspace",
     },
     "Light2": {
         "label": "Light 2 (Right Window)",
@@ -175,15 +177,15 @@ DEVICE_METADATA = {
         "pin": "GPIO 19",
         "room": "Window Area",
         "spatial_position": "Right",
-        "description": "Ambient perimeter illumination near the right window"
+        "description": "Ambient perimeter illumination near the right window",
     },
     "Light3": {
-        "label": "Light 3 (Ceiling Fan / Aux)",
+        "label": "Light 3 (Ceiling / Aux)",
         "icon": "lightbulb",
         "pin": "GPIO 21",
         "room": "Central Room",
         "spatial_position": "Center",
-        "description": "Central overhead lighting fixture"
+        "description": "Central overhead lighting fixture",
     },
     "Light4": {
         "label": "Light 4 (Night / Accent)",
@@ -191,59 +193,197 @@ DEVICE_METADATA = {
         "pin": "GPIO 22",
         "room": "Nightstand / Corner",
         "spatial_position": "Corner",
-        "description": "Warm low-intensity evening accent light"
+        "description": "Warm low-intensity evening accent light",
     },
-    "fan1": {
-        "label": "Smart Fan (Right)",
-        "icon": "fan",
-        "pin": "Aux Relay",
-        "room": "Right Ceiling",
-        "spatial_position": "Right",
-        "description": "Detected ceiling circulation fan"
-    }
 }
 
-# API Endpoints
+
+# ---------------------------------------------------------------------------
+# Room context helpers
+# ---------------------------------------------------------------------------
+
+def _ctx_path() -> Path:
+    p = Path(os.getenv("ROOM_CONTEXT_PATH", "room_context.json"))
+    if not p.is_absolute():
+        p = BASE_DIR / p
+    return p
+
+
+def _load_ctx_raw() -> Optional[dict]:
+    p = _ctx_path()
+    if p.exists():
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return None
+
+
+# ---------------------------------------------------------------------------
+# API: system status
+# ---------------------------------------------------------------------------
+
 @app.get("/api/status")
 def get_status():
-    """Returns general system status, broker connectivity, and AI provider info."""
-    broker_host = os.getenv("MQTT_BROKER_HOST", "localhost")
-    broker_port = int(os.getenv("MQTT_BROKER_PORT", "1883"))
-    dry_run = os.getenv("MQTT_DRY_RUN", "false").lower() == "true"
-    ai_provider = os.getenv("AI_PROVIDER", "groq").lower()
-    llm_model = os.getenv("GROQ_COMMAND_MODEL", os.getenv("GROQ_LLM_MODEL", "qwen/qwen3.8-27b"))
-    whisper_model = os.getenv("GROQ_WHISPER_MODEL", "whisper-large-v3")
-    camera_enabled = os.getenv("CAMERA_ENABLED", "true").lower() == "true"
-    tts_enabled = os.getenv("TTS_ENABLED", "true").lower() == "true"
-
+    """General system status, broker connectivity, AI backend info."""
+    from config import settings  # noqa: local import avoids circular at module level
     return {
         "mqtt": {
             "connected": mqtt_executor.is_connected(),
-            "dry_run": dry_run,
-            "broker_host": broker_host,
-            "broker_port": broker_port,
+            "dry_run": settings.mqtt_dry_run,
+            "broker_host": settings.mqtt_broker_host,
+            "broker_port": settings.mqtt_broker_port,
         },
         "esp32": {
             "status": mqtt_executor.get_esp32_status(),
         },
         "ai": {
-            "provider": ai_provider,
-            "llm_model": llm_model,
-            "whisper_model": whisper_model,
+            "llm_backend": settings.llm_backend,
+            "stt_backend": settings.stt_backend,
+            "llm_model": (
+                settings.ollama_model
+                if settings.llm_backend == "ollama"
+                else settings.groq_command_model
+            ),
         },
         "features": {
-            "camera_enabled": camera_enabled,
-            "tts_enabled": tts_enabled,
+            "camera_enabled": settings.camera_enabled,
+            "tts_enabled": settings.tts_enabled,
+            "wake_word_enabled": settings.wake_word_enabled,
         },
-        "enabled_devices": mqtt_executor.enabled_devices()
+        "platform": settings.platform,
+        "enabled_devices": mqtt_executor.enabled_devices(),
     }
+
+
+# ---------------------------------------------------------------------------
+# API: room context (Pi onboarding endpoint)
+# ---------------------------------------------------------------------------
+
+@app.post("/context")
+async def post_context(request: Request):
+    """
+    Receive a room_context.json from the onboarding PC.
+
+    Body: raw JSON matching the room_context schema.
+    On success, saves to ROOM_CONTEXT_PATH and reloads the device registry.
+
+    Example:
+        curl -X POST http://<pi-ip>:8000/context \\
+             -H 'Content-Type: application/json' \\
+             -d @room_context.json
+    """
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Body must be valid JSON")
+
+    # Validate against room_context schema
+    try:
+        import room_context as rc
+        ok, errors = rc.validate(data)
+        if not ok:
+            raise HTTPException(
+                status_code=422,
+                detail={"message": "room_context schema validation failed", "errors": errors},
+            )
+    except ImportError:
+        pass  # room_context module missing, skip validation
+
+    # Persist
+    p = _ctx_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    print(f"[SERVER] room_context.json saved to {p}")
+
+    # Reload device registry
+    mqtt_executor.reload_devices()
+
+    devices = data.get("devices", [])
+    return {
+        "status": "ok",
+        "saved_to": str(p),
+        "device_count": len(devices),
+        "device_ids": [d.get("id") for d in devices],
+    }
+
+
+@app.get("/context")
+def get_context():
+    """Return the current room_context.json."""
+    data = _load_ctx_raw()
+    if data is None:
+        raise HTTPException(status_code=404, detail="No room_context.json found")
+    return data
+
+
+# ---------------------------------------------------------------------------
+# API: device state snapshot (for digital twin initial load)
+# ---------------------------------------------------------------------------
+
+@app.get("/state")
+def get_state():
+    """
+    Snapshot of all device states + online status.
+    The digital twin calls this on page load, then subscribes via MQTT WS.
+    """
+    ctx = _load_ctx_raw()
+    devices_out = {}
+    for name, state_val in mqtt_executor.get_device_states().items():
+        meta = ALL_DEVICES_META(name)
+        dev_id = mqtt_executor.ALL_DEVICES.get(name, {}).get("id", name.lower())
+        devices_out[dev_id] = {
+            "name": name,
+            "state": state_val,
+            "set_topic": f"inot/devices/{dev_id}/set",
+            "state_topic": f"inot/devices/{dev_id}/state",
+            **meta,
+        }
+    return {
+        "devices": devices_out,
+        "mqtt_connected": mqtt_executor.is_connected(),
+        "esp32_status": mqtt_executor.get_esp32_status(),
+        "timestamp": time.time(),
+        "room_context_loaded": ctx is not None,
+    }
+
+
+def ALL_DEVICES_META(name: str) -> dict:
+    """Return display metadata for a device name."""
+    base = DEVICE_METADATA.get(name, {})
+    ctx = _load_ctx_raw()
+    if ctx:
+        for dev in ctx.get("devices", []):
+            if dev.get("name") == name:
+                return {
+                    "type": dev.get("type", "light"),
+                    "zone": dev.get("zone", "room"),
+                    "x": dev.get("x", 0.5),
+                    "y": dev.get("y", 0.5),
+                    "near": dev.get("near", []),
+                    "label": base.get("label", name),
+                    "icon": base.get("icon", "device"),
+                }
+    return {
+        "type": "light",
+        "zone": "room",
+        "x": 0.5,
+        "y": 0.5,
+        "near": [],
+        "label": base.get("label", name),
+        "icon": base.get("icon", "lightbulb"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# API: devices list
+# ---------------------------------------------------------------------------
 
 @app.get("/api/devices")
 def get_devices():
-    """Returns all devices, their enabled status, state, and metadata."""
+    """All devices, their enabled status, state, and metadata."""
     enabled = [d.lower() for d in mqtt_executor.enabled_devices()]
     states = mqtt_executor.get_device_states()
-    
     device_list = []
     for dev_name, info in mqtt_executor.ALL_DEVICES.items():
         is_enabled = dev_name.lower() in enabled
@@ -254,79 +394,79 @@ def get_devices():
             "pin": "N/A",
             "room": "General",
             "spatial_position": "Unknown",
-            "description": f"Smart appliance {dev_name}"
+            "description": f"Smart appliance {dev_name}",
         })
         device_list.append({
             "name": dev_name,
+            "id": info.get("id", dev_name.lower()),
             "label": meta["label"],
             "state": curr_state,
             "enabled": is_enabled,
             "topic_set": info["topic"],
             "topic_state": info["state"],
-            "pin": meta["pin"],
-            "room": meta["room"],
-            "spatial_position": meta["spatial_position"],
-            "icon": meta["icon"],
-            "description": meta["description"]
+            "pin": meta.get("pin", "N/A"),
+            "room": meta.get("room", "General"),
+            "spatial_position": meta.get("spatial_position", "Unknown"),
+            "icon": meta.get("icon", "lightbulb"),
+            "description": meta.get("description", ""),
         })
     return {"devices": device_list}
 
+
+# ---------------------------------------------------------------------------
+# API: device control
+# ---------------------------------------------------------------------------
+
 @app.post("/api/device/{device_name}/toggle")
 def toggle_device(device_name: str):
-    """Toggles a device state between ON and OFF."""
+    """Toggle a device between ON and OFF."""
     allowed = mqtt_executor.enabled_devices()
     canonical = None
     for d in allowed:
         if d.lower() == device_name.lower():
             canonical = d
             break
-            
     if not canonical:
-        # Fallback check across all devices if user wants to toggle even if not explicitly in ENABLED_DEVICES
         for d in mqtt_executor.ALL_DEVICES:
             if d.lower() == device_name.lower():
                 canonical = d
                 break
-
     if not canonical:
         raise HTTPException(status_code=404, detail=f"Device '{device_name}' not found.")
 
     current = mqtt_executor.get_device_state(canonical)
     next_cmd = "Off" if current == "ON" else "On"
-
     success = mqtt_executor.execute(canonical, next_cmd)
-    new_state = mqtt_executor.get_device_state(canonical)
-
     return {
         "success": success,
         "device": canonical,
         "previous_state": current,
-        "new_state": new_state,
-        "command": next_cmd
+        "new_state": mqtt_executor.get_device_state(canonical),
+        "command": next_cmd,
     }
+
 
 @app.post("/api/device/{device_name}/set")
 def set_device(device_name: str, payload: dict):
-    """Sets a device state explicitly to 'On' or 'Off'."""
+    """Set a device state explicitly to 'On' or 'Off'."""
     cmd = payload.get("state", "On").capitalize()
     if cmd not in ("On", "Off"):
         raise HTTPException(status_code=400, detail="State must be 'On' or 'Off'.")
-
     success = mqtt_executor.execute(device_name, cmd)
     return {
         "success": success,
         "device": device_name,
         "state": mqtt_executor.get_device_state(device_name),
-        "command": cmd
+        "command": cmd,
     }
+
 
 @app.post("/api/devices/batch")
 def batch_action(payload: dict):
-    """Performs batch actions like 'all_on', 'all_off', 'study_mode', 'night_mode'."""
+    """Batch actions: all_on, all_off, study_mode, night_mode."""
     action = payload.get("action", "").lower()
     enabled = mqtt_executor.enabled_devices()
     results = {}
-
     if action == "all_on":
         for dev in enabled:
             results[dev] = mqtt_executor.execute(dev, "On")
@@ -334,83 +474,107 @@ def batch_action(payload: dict):
         for dev in enabled:
             results[dev] = mqtt_executor.execute(dev, "Off")
     elif action == "study_mode":
-        # Turn on left/desk light, turn off other lights
         for dev in enabled:
             cmd = "On" if "1" in dev else "Off"
             results[dev] = mqtt_executor.execute(dev, cmd)
     elif action == "night_mode":
-        # All off or low accent
         for dev in enabled:
             results[dev] = mqtt_executor.execute(dev, "Off")
     else:
         raise HTTPException(status_code=400, detail=f"Unknown batch action '{action}'.")
+    return {"action": action, "results": results, "states": mqtt_executor.get_device_states()}
 
-    return {
-        "action": action,
-        "results": results,
-        "states": mqtt_executor.get_device_states()
-    }
+
+# ---------------------------------------------------------------------------
+# API: command processing (uses pipeline.py for Pi, legacy for PC)
+# ---------------------------------------------------------------------------
 
 @app.post("/api/command")
-def process_command(payload: dict):
+def process_command_endpoint(payload: dict):
     """
-    Processes natural language command using Groq Qwen with full spatial reasoning,
-    then executes device actions via safe_parse and MQTT.
+    Process a natural language command.
+    Uses pipeline.process_command() (Pi-safe) when available,
+    falls back to command_processor (PC legacy) otherwise.
     """
     query = payload.get("query", "").strip()
     if not query:
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
 
-    spatial_text = None
-    if SPATIAL_FILE.exists():
-        try:
-            with open(SPATIAL_FILE, "r", encoding="utf-8") as f:
-                spatial_text = f.read()
-        except Exception:
-            pass
-
     try:
-        result = command_processor.process_single_command(query, spatial_information=spatial_text, speak=False)
+        import pipeline  # type: ignore[import]
+        result = pipeline.process_command(query)
         result["device_states"] = mqtt_executor.get_device_states()
         return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Command processing error: {e}")
+    except ImportError:
+        pass
+
+    cp = _get_command_processor()
+    if cp:
+        spatial_text = None
+        if SPATIAL_FILE.exists():
+            try:
+                spatial_text = SPATIAL_FILE.read_text(encoding="utf-8")
+            except Exception:
+                pass
+        try:
+            result = cp.process_single_command(
+                query, spatial_information=spatial_text, speak=False
+            )
+            result["device_states"] = mqtt_executor.get_device_states()
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Command processing error: {e}")
+
+    raise HTTPException(status_code=503, detail="No command processor available.")
+
+
+# ---------------------------------------------------------------------------
+# API: voice (audio upload → STT → command)
+# ---------------------------------------------------------------------------
 
 @app.post("/api/voice/process-audio")
 async def process_voice_audio(audio: UploadFile = File(...)):
     """
-    Accepts an audio blob from the browser MediaRecorder, transcribes it via Groq Whisper,
-    then evaluates spatial intent and executes device control.
+    Accept an audio blob, transcribe via configured STT backend,
+    then process as a command.
     """
-    suffix = Path(audio.filename).suffix or ".webm"
+    suffix = Path(audio.filename or "clip.wav").suffix or ".webm"
     temp_audio = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            contents = await audio.read()
-            tmp.write(contents)
+            tmp.write(await audio.read())
             temp_audio = tmp.name
 
-        # Transcribe with Groq Whisper
-        transcript_text = transcriptor.transcribe_file(temp_audio)
+        # Try new stt_backend first
+        try:
+            import stt_backend  # type: ignore[import]
+            transcript_text = stt_backend.transcribe_file(temp_audio)
+        except ImportError:
+            tr = _get_transcriptor()
+            if tr:
+                transcript_text = tr.transcribe_file(temp_audio)
+            else:
+                raise HTTPException(status_code=503, detail="No STT backend available.")
 
         if not transcript_text or not transcript_text.strip():
-            return {
-                "transcript": "",
-                "message": "No speech detected in audio."
-            }
+            return {"transcript": "", "message": "No speech detected in audio."}
 
-        # Process the transcribed command
-        spatial_text = None
-        if SPATIAL_FILE.exists():
-            try:
-                with open(SPATIAL_FILE, "r", encoding="utf-8") as f:
-                    spatial_text = f.read()
-            except Exception:
-                pass
+        try:
+            import pipeline  # type: ignore[import]
+            result = pipeline.process_command(transcript_text)
+        except ImportError:
+            cp = _get_command_processor()
+            if cp:
+                spatial_text = SPATIAL_FILE.read_text() if SPATIAL_FILE.exists() else None
+                result = cp.process_single_command(transcript_text, spatial_information=spatial_text, speak=False)
+            else:
+                raise HTTPException(status_code=503, detail="No command processor.")
 
-        result = command_processor.process_single_command(transcript_text, spatial_information=spatial_text, speak=False)
         result["device_states"] = mqtt_executor.get_device_states()
+        result["transcript"] = transcript_text
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Audio processing failed: {e}")
     finally:
@@ -420,85 +584,96 @@ async def process_voice_audio(audio: UploadFile = File(...)):
             except Exception:
                 pass
 
+
 @app.post("/api/voice/server-mic")
 def trigger_server_mic():
     """
-    Triggers the host machine's microphone directly using PyAudio / SoundDevice,
-    records 5 seconds, transcribes via Groq Whisper, and executes the command.
+    Trigger the server-side microphone recording.
+    Requires sounddevice or pyaudio to be installed.
     """
     try:
-        transcript_text = transcriptor.transcribe()
-        if not transcript_text or not transcript_text.strip():
-            return {
-                "transcript": "",
-                "message": "No speech detected."
-            }
+        import stt_backend  # type: ignore[import]
+        wav_path = stt_backend.record_audio()
+        transcript_text = stt_backend.transcribe_file(wav_path)
+    except ImportError:
+        tr = _get_transcriptor()
+        if tr:
+            transcript_text = tr.transcribe()
+        else:
+            raise HTTPException(status_code=503, detail="No audio backend available.")
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
-        spatial_text = None
-        if SPATIAL_FILE.exists():
-            try:
-                with open(SPATIAL_FILE, "r", encoding="utf-8") as f:
-                    spatial_text = f.read()
-            except Exception:
-                pass
+    if not transcript_text or not transcript_text.strip():
+        return {"transcript": "", "message": "No speech detected."}
 
-        result = command_processor.process_single_command(transcript_text, spatial_information=spatial_text, speak=False)
-        result["device_states"] = mqtt_executor.get_device_states()
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Server microphone capture failed: {e}")
+    try:
+        import pipeline  # type: ignore[import]
+        result = pipeline.process_command(transcript_text)
+    except ImportError:
+        cp = _get_command_processor()
+        if cp:
+            spatial_text = SPATIAL_FILE.read_text() if SPATIAL_FILE.exists() else None
+            result = cp.process_single_command(transcript_text, spatial_information=spatial_text, speak=False)
+        else:
+            raise HTTPException(status_code=503, detail="No command processor.")
+
+    result["device_states"] = mqtt_executor.get_device_states()
+    result["transcript"] = transcript_text
+    return result
+
+
+# ---------------------------------------------------------------------------
+# API: spatial / scene image (PC legacy)
+# ---------------------------------------------------------------------------
 
 @app.get("/api/spatial")
 def get_spatial_info():
-    """Returns spatial information text and available image artifacts."""
     content = ""
     if SPATIAL_FILE.exists():
-        with open(SPATIAL_FILE, "r", encoding="utf-8") as f:
-            content = f.read()
+        content = SPATIAL_FILE.read_text(encoding="utf-8")
     else:
-        content = "No spatial_information.txt found. Using default left-to-right device placement."
-
-    has_annotated = ANNOTATED_IMG.exists()
-    has_scene = SCENE_IMG.exists()
-
+        content = "No spatial_information.txt found. Using room_context.json if available."
     return {
         "spatial_text": content,
-        "has_annotated_image": has_annotated,
-        "has_scene_image": has_scene,
-        "image_url": "/api/scene-image" if (has_annotated or has_scene) else None
+        "has_annotated_image": ANNOTATED_IMG.exists(),
+        "has_scene_image": SCENE_IMG.exists(),
+        "image_url": "/api/scene-image" if (ANNOTATED_IMG.exists() or SCENE_IMG.exists()) else None,
     }
+
 
 @app.get("/api/scene-image")
 def get_scene_image():
-    """Serves the latest scene or annotated image."""
     if ANNOTATED_IMG.exists():
         return FileResponse(ANNOTATED_IMG, media_type="image/jpeg")
     if SCENE_IMG.exists():
         return FileResponse(SCENE_IMG, media_type="image/jpeg")
     raise HTTPException(status_code=404, detail="No scene image available.")
 
+
+# ---------------------------------------------------------------------------
+# API: metrics
+# ---------------------------------------------------------------------------
+
 @app.get("/api/metrics")
 def get_metrics(limit: int = 25):
-    """Returns the most recent latency metrics from logs/metrics.csv."""
     if not METRICS_FILE.exists():
         return {"metrics": []}
-    
-    records = []
     try:
         with open(METRICS_FILE, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            records = list(reader)
-        # Return latest first
-        latest = records[-limit:][::-1]
-        return {"metrics": latest}
+            records = list(csv.DictReader(f))
+        return {"metrics": records[-limit:][::-1]}
     except Exception as e:
         return {"metrics": [], "error": str(e)}
 
-# WebSocket for real-time updates
+
+# ---------------------------------------------------------------------------
+# WebSocket: real-time MQTT state sync for PC dashboard
+# ---------------------------------------------------------------------------
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
-    # Send initial state snapshot
     try:
         await websocket.send_json({
             "type": "initial_state",
@@ -508,13 +683,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 "esp32_status": mqtt_executor.get_esp32_status(),
                 "mqtt_connected": mqtt_executor.is_connected(),
                 "enabled_devices": mqtt_executor.enabled_devices(),
-            }
+            },
         })
         while True:
             data = await websocket.receive_text()
             try:
                 msg = json.loads(data)
-                # Handle client-sent actions
                 if msg.get("action") == "toggle":
                     dev = msg.get("device")
                     if dev:
@@ -530,23 +704,39 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception:
         manager.disconnect(websocket)
 
+
+# ---------------------------------------------------------------------------
 # Static file serving
+# ---------------------------------------------------------------------------
+
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+# Digital twin static app (optional)
+if TWIN_DIR.exists():
+    app.mount("/twin", StaticFiles(directory=TWIN_DIR, html=True), name="twin")
+
 
 @app.get("/")
 def serve_index():
     index_file = STATIC_DIR / "index.html"
     if index_file.exists():
         return FileResponse(index_file)
-    return JSONResponse({"message": "Dashboard frontend loading... Please check static/index.html"})
+    return JSONResponse({"message": "INOT Mark1 running. Add static/index.html for the dashboard."})
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     import uvicorn
+
     port = int(os.getenv("DASHBOARD_PORT", "8000"))
     host = os.getenv("DASHBOARD_HOST", "0.0.0.0")
-    print(f"\n========================================================")
-    print(f"  [INOT Mark1] Smart Home Assistant Web Dashboard")
-    print(f"  Access local URL:  http://localhost:{port}")
-    print(f"  Access network:    http://127.0.0.1:{port}")
-    print(f"========================================================\n")
+    print(f"\n{'='*56}")
+    print(f"  INOT Mark1 Smart Home Server")
+    print(f"  Dashboard:    http://localhost:{port}")
+    print(f"  Digital Twin: http://localhost:{port}/twin")
+    print(f"  API:          http://localhost:{port}/api/status")
+    print(f"{'='*56}\n")
     uvicorn.run("server:app", host=host, port=port, reload=False)
