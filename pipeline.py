@@ -19,6 +19,7 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import argparse
 import json
 import re
@@ -56,9 +57,16 @@ def _load_room_context() -> Dict[str, Any]:
     if _room_ctx is not None:
         return _room_ctx
 
-    # Re-read settings each call so monkeypatching works in tests
+    # Check os.environ first, then fallback to settings
     from config import settings as _s
-    ctx_path = Path(_s.room_context_path)
+    env_path = os.getenv("ROOM_CONTEXT_PATH", _s.room_context_path)
+    ctx_path = Path(env_path)
+    if not ctx_path.is_absolute():
+        # Check relative to base_dir if needed
+        cand = _s.base_dir / ctx_path
+        if cand.exists():
+            ctx_path = cand
+
     if ctx_path.exists():
         try:
             _room_ctx = room_context.load(ctx_path)

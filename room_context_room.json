@@ -1,0 +1,51 @@
+{
+  "room_name": "Living Room / Work Area",
+  "devices": [
+    {
+      "id": "fan1",
+      "name": "Ceiling Fan",
+      "type": "fan",
+      "x": 0.47,
+      "y": 0.16,
+      "zone": "ceiling",
+      "near": ["ceiling", "center", "tv"]
+    },
+    {
+      "id": "light_desk",
+      "name": "Desk Lamp",
+      "type": "light",
+      "x": 0.16,
+      "y": 0.76,
+      "zone": "desk",
+      "near": ["desk", "table", "laptop", "window"]
+    },
+    {
+      "id": "light_tv",
+      "name": "TV Backlight",
+      "type": "light",
+      "x": 0.65,
+      "y": 0.54,
+      "zone": "entertainment",
+      "near": ["tv", "shelf", "console"]
+    },
+    {
+      "id": "tv1",
+      "name": "Smart TV",
+      "type": "tv",
+      "x": 0.65,
+      "y": 0.68,
+      "zone": "entertainment",
+      "near": ["shelf", "console", "backlight"]
+    },
+    {
+      "id": "curtain1",
+      "name": "Balcony Curtain",
+      "type": "curtain",
+      "x": 0.46,
+      "y": 0.48,
+      "zone": "window",
+      "near": ["window", "balcony", "door"]
+    }
+  ]
+}
+
