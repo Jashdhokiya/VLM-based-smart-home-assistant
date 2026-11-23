@@ -43,12 +43,47 @@ def _query_ollama(
     messages: List[Dict[str, str]],
     model: Optional[str] = None,
 ) -> str:
-    """Query Ollama via its OpenAI-compatible /v1/chat/completions endpoint."""
+    """
+    Query Ollama. Tries native /api/chat first, falls back to OpenAI /v1/chat/completions.
+    """
     import httpx  # type: ignore[import-untyped]
 
     model = model or settings.ollama_model
-    url = settings.ollama_base_url.rstrip("/") + "/chat/completions"
-    payload = {
+    base_url = settings.ollama_base_url.rstrip("/")
+    if base_url.endswith("/v1"):
+        root_url = base_url[:-3]
+    else:
+        root_url = base_url
+
+    # Attempt 1: Native Ollama /api/chat endpoint (most reliable across all Ollama versions)
+    native_url = f"{root_url}/api/chat"
+    native_payload = {
+        "model": model,
+        "messages": messages,
+        "stream": False,
+        "format": "json",
+        "options": {
+            "temperature": settings.llm_temperature,
+            "num_predict": settings.llm_max_tokens,
+        },
+    }
+
+    try:
+        resp = httpx.post(
+            native_url,
+            json=native_payload,
+            timeout=settings.llm_timeout_s,
+            headers={"Content-Type": "application/json"},
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get("message", {}).get("content", "").strip()
+    except Exception:
+        pass
+
+    # Attempt 2: OpenAI-compatible /v1/chat/completions
+    v1_url = f"{root_url}/v1/chat/completions"
+    v1_payload = {
         "model": model,
         "messages": messages,
         "temperature": settings.llm_temperature,
@@ -58,8 +93,8 @@ def _query_ollama(
 
     try:
         resp = httpx.post(
-            url,
-            json=payload,
+            v1_url,
+            json=v1_payload,
             timeout=settings.llm_timeout_s,
             headers={"Content-Type": "application/json"},
         )
