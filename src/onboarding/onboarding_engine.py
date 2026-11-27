@@ -453,7 +453,7 @@ def _query_gemini_vision(
         ],
         "generationConfig": {
             "temperature": 0.1,
-            "maxOutputTokens": 1024,
+            "maxOutputTokens": 8192,
             "responseMimeType": "application/json",
         },
     }
