@@ -1,6 +1,6 @@
 """Tests for mqtt_executor.py with mocked MQTT client."""
 import pytest
-import mqtt_executor
+from src.hardware import mqtt_executor
 
 
 def test_execute_dry_run(monkeypatch):

@@ -1,12 +1,12 @@
 import os
 import csv
 import pytest
-import safe_parse
-import mqtt_executor
-import metrics
+from src.core import safe_parse
+from src.hardware import mqtt_executor
+from src.core import metrics
 
 try:
-    import camera_capture
+    from src.onboarding import camera_capture
     _HAS_CAMERA = True
 except ImportError:
     _HAS_CAMERA = False

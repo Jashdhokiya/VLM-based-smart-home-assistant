@@ -197,7 +197,7 @@ def check_room_context():
         return
 
     try:
-        import room_context as rc
+        import src.core.room_context as rc
         ctx = rc.load(full_path)
         devs = rc.device_list(ctx)
         _pass("room_context", f"Valid — {len(devs)} device(s): {[d['id'] for d in devs]}")

@@ -40,11 +40,11 @@ def test_fast_path_e2e(monkeypatch, room_context_file):
     monkeypatch.setenv("ENABLED_DEVICES", "Light1,Light2")
 
     # Force reload settings and pipeline room context cache
-    import config
+    import src.core.config as config
     new_settings = config.Settings.load()
     monkeypatch.setattr(config, "settings", new_settings)
 
-    import pipeline
+    from src import pipeline
     pipeline._room_ctx = None
     # Also patch pipeline's own reference to settings
     monkeypatch.setattr(pipeline, "settings", new_settings, raising=False)
@@ -62,9 +62,9 @@ def test_llm_fallback_e2e(monkeypatch, room_context_file):
     monkeypatch.setenv("ROOM_CONTEXT_PATH", room_context_file)
     monkeypatch.setenv("LLM_BACKEND", "groq")
 
-    import pipeline
+    from src import pipeline
     pipeline._room_ctx = None
-    import config
+    import src.core.config as config
     monkeypatch.setattr(config, "settings", config.Settings.load())
 
     # Mock the LLM backend
@@ -75,7 +75,7 @@ def test_llm_fallback_e2e(monkeypatch, room_context_file):
         "fallback_used": False,
     }
 
-    with patch("llm_backend.query", return_value=mock_result):
+    with patch("src.ai.llm_backend.query", return_value=mock_result):
         result = pipeline.process_command("I'm going to sleep now")
 
     assert result["path"] == "llm"
@@ -88,17 +88,17 @@ def test_wav_file_pipeline(monkeypatch, room_context_file):
     monkeypatch.setenv("MQTT_DRY_RUN", "true")
     monkeypatch.setenv("ROOM_CONTEXT_PATH", room_context_file)
 
-    import config
+    import src.core.config as config
     new_settings = config.Settings.load()
     monkeypatch.setattr(config, "settings", new_settings)
 
-    import pipeline
+    from src import pipeline
     pipeline._room_ctx = None
     monkeypatch.setattr(pipeline, "settings", new_settings, raising=False)
 
     wav_file = str(Path(__file__).parent / "fixtures" / "test_command.wav")
 
-    with patch("stt_backend.transcribe_file", return_value="turn on light 1"):
+    with patch("src.audio.stt_backend.transcribe_file", return_value="turn on light 1"):
         result = pipeline.run_single(wav_path=wav_file)
 
     assert result["path"] == "fast_path"
@@ -110,12 +110,12 @@ def test_no_speech_in_wav(monkeypatch, room_context_file):
     monkeypatch.setenv("MQTT_DRY_RUN", "true")
     monkeypatch.setenv("ROOM_CONTEXT_PATH", room_context_file)
 
-    import pipeline
+    from src import pipeline
     pipeline._room_ctx = None
 
     wav_file = str(Path(__file__).parent / "fixtures" / "test_command.wav")
 
-    with patch("stt_backend.transcribe_file", return_value=""):
+    with patch("src.audio.stt_backend.transcribe_file", return_value=""):
         result = pipeline.run_single(wav_path=wav_file)
 
     assert result.get("error") == "no_speech"

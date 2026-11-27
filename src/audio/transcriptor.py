@@ -2,7 +2,7 @@ import os
 import wave
 from dotenv import load_dotenv
 from groq import Groq
-import metrics
+from src.core import metrics
 
 load_dotenv()
 

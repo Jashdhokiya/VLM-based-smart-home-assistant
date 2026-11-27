@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-LOGS_DIR = os.path.join(os.path.dirname(__file__), "logs")
+LOGS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs")
 METRICS_FILE = os.path.join(LOGS_DIR, "metrics.csv")
 RUN_ID = os.getenv("RUN_ID") or uuid.uuid4().hex[:8]
 

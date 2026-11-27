@@ -1,7 +1,7 @@
 """Tests for room_context.py"""
 import json
 import pytest
-import room_context
+from src.core import room_context
 
 
 VALID_CONTEXT = {

@@ -15,8 +15,8 @@ import json
 import time
 from typing import Any, Dict, List, Optional
 
-from config import settings
-import metrics
+from src.core.config import settings
+from src.core import metrics
 
 
 def _make_system_prompt(room_context_text: str, device_ids: List[str]) -> str:

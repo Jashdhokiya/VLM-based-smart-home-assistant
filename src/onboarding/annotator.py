@@ -3,9 +3,12 @@ import json
 import cv2
 import uuid
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # Module-level storage for fresh metadata
 current_metadata = None
@@ -69,7 +72,8 @@ def annotate(objects, image_path):
     response_data = {"data": [items]}
     current_metadata = response_data
     try:
-        with open("metadata.py", "w", encoding="utf-8") as f:
+        metadata_path = str(_PROJECT_ROOT / "metadata.py")
+        with open(metadata_path, "w", encoding="utf-8") as f:
             f.write(f"metadata = {json.dumps(response_data, indent=4)}\n")
         print("[DETECTION] Visual layout saved. You can adjust boxes in the GUI window or auto-accept.")
     except Exception as e:
@@ -81,9 +85,10 @@ def parser(label_counts, meta=None):
     """Filters metadata to retain only the top-N scoring objects per label."""
     active_meta = meta or current_metadata
     if active_meta is None:
-        if os.path.exists("metadata.py"):
+        metadata_path = str(_PROJECT_ROOT / "metadata.py")
+        if os.path.exists(metadata_path):
             try:
-                with open("metadata.py", "r", encoding="utf-8") as f:
+                with open(metadata_path, "r", encoding="utf-8") as f:
                     content = f.read()
                     if "metadata =" in content:
                         dict_str = content.split("metadata =", 1)[1].strip()
@@ -191,7 +196,8 @@ def visualize(image_path, new_metadata):
     auto_accept = os.getenv("ANNOTATION_AUTO_ACCEPT", "false").lower() == "true"
     if auto_accept:
         print("[DETECTION] Auto-accept enabled. Saving annotated_image.jpg directly.")
-        cv2.imwrite("annotated_image.jpg", cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR))
+        annotated_path = str(_PROJECT_ROOT / "annotated_image.jpg")
+        cv2.imwrite(annotated_path, cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR))
         return "accept", plotted_objects
 
     # Interactive GUI mode
@@ -246,7 +252,8 @@ def visualize(image_path, new_metadata):
             return "manual", plotted_objects
         elif key == ord("a"):
             print("[DETECTION] Accepting and saving image.")
-            cv2.imwrite("annotated_image.jpg", cv2.cvtColor(temp_image, cv2.COLOR_RGB2BGR))
+            annotated_path = str(_PROJECT_ROOT / "annotated_image.jpg")
+            cv2.imwrite(annotated_path, cv2.cvtColor(temp_image, cv2.COLOR_RGB2BGR))
             cv2.destroyAllWindows()
             return "accept", plotted_objects
 

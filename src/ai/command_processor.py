@@ -3,15 +3,18 @@ import sys
 import time
 import re
 import uuid
+from pathlib import Path
 from dotenv import load_dotenv
 from groq import Groq
-import mqtt_executor
-import safe_parse
-import metrics
-import transcriptor
+from src.hardware import mqtt_executor
+from src.core import safe_parse
+from src.core import metrics
+from src.audio import transcriptor
 import pyttsx3
 
 load_dotenv()
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 def text_to_speech(text):
     print(text)
@@ -68,7 +71,8 @@ def init_conversation(spatial_information=None):
     global _conversation_history
     if spatial_information is None:
         try:
-            with open("spatial_information.txt", "r", encoding="utf-8") as f:
+            spatial_path = _PROJECT_ROOT / "spatial_information.txt"
+            with open(spatial_path, "r", encoding="utf-8") as f:
                 spatial_information = f.read()
         except Exception:
             spatial_information = "Light1 is on the left. Light2 is on the right."

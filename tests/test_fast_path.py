@@ -1,6 +1,6 @@
 """Tests for fast_path.py"""
 import pytest
-import fast_path
+from src.ai import fast_path
 
 
 CONTEXT = {

@@ -1,14 +1,19 @@
 import os
 import base64
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 def encode_image(image_path: str) -> str:
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode("utf-8")
 
-def information(object_list, image_path: str = "./annotated_image.jpg") -> str:
+def information(object_list, image_path: str = None) -> str:
+    if image_path is None:
+        image_path = str(_PROJECT_ROOT / "annotated_image.jpg")
     """
     Performs spatial reasoning on annotated objects.
     Defaults to Groq (Vision or LLM) so only GROQ_API_KEY is needed.

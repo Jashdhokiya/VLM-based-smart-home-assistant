@@ -94,7 +94,7 @@ def test_groq_command_decision():
         return False
     try:
         from groq import Groq
-        import safe_parse
+        import src.core.safe_parse as safe_parse
         client = Groq(api_key=api_key)
         model = os.getenv("GROQ_COMMAND_MODEL", os.getenv("GROQ_LLM_MODEL", "qwen/qwen3.8-27b"))
         res = client.chat.completions.create(
@@ -125,7 +125,7 @@ def test_groq_spatial_reasoning():
         print("  [FAIL] GROQ_API_KEY not configured.")
         return False
     try:
-        import spatial_inferencer
+        import src.ai.spatial_inferencer as spatial_inferencer
         image_path = root_dir / "images" / "test_image.jpg"
         if not image_path.exists():
             image_path = root_dir / "images" / "current_scene.jpg"

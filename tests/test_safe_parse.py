@@ -1,5 +1,5 @@
 import pytest
-from safe_parse import parse_dict, parse_device_commands, parse_device_counts
+from src.core.safe_parse import parse_dict, parse_device_commands, parse_device_counts
 
 def test_parse_dict_valid_json():
     text = '{"Light1": "On", "Light2": "Off"}'

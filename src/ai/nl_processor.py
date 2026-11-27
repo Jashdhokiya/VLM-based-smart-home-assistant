@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from groq import Groq
 
 load_dotenv()
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
 
 def parse_command(client, user_input):
     pre_prompt = (

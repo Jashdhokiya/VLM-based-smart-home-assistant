@@ -16,7 +16,7 @@ from typing import List, Optional
 from dotenv import load_dotenv
 
 # Load .env from project root (idempotent)
-_BASE_DIR = Path(__file__).resolve().parent
+_BASE_DIR = Path(__file__).resolve().parent.parent.parent
 load_dotenv(_BASE_DIR / ".env")
 
 

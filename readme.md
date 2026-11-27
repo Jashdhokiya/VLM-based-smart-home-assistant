@@ -1,4 +1,4 @@
-# 🧠 VLM-Based Smart Home Assistant (INOT Mark1)
+# 🧠 INOT Mark1 — VLM-Based Smart Home Assistant
 
 An intelligent, vision-language-action (VLA) smart home system that enables real-time spatial voice control of physical appliances using webcam perception, spatial reasoning, and an open MQTT + ESP32 hardware architecture.
 
@@ -9,21 +9,15 @@ Based on the research architecture in **INOT (arXiv:2504.13942)**, this implemen
 ## ⚡ System Architecture
 
 ```text
-Laptop Microphone ──> transcriptor.py (PyAudio/SoundDevice + Groq Whisper)
+Phone/Laptop Mic ──> src/audio/stt_backend.py (Vosk/Whisper/Groq STT)
                             │
-                      nl_processor.py ('two lights' ──> {'light': 2} via Groq Qwen)
+                      src/ai/fast_path.py (rule-based intent matching)
+                            │  (fallback)
+                      src/ai/llm_backend.py (Ollama local / Groq cloud LLM)
                             │
-Laptop Webcam     ──> camera_capture.py ──> images/current_scene.jpg
+                      src/core/safe_parse.py (Secure parsing, no eval)
                             │
-                      annotator.py (Visual candidate labeling & GUI editor) ──> annotated_image.jpg
-                            │
-                      spatial_inferencer.py (Groq Qwen Spatial Reasoning) ──> spatial_information.txt
-                            │
-Voice Command     ──> command_processor.py (Groq Qwen Contextual Decision)
-                            │
-                      safe_parse.py (Secure parsing, strict typing, no eval)
-                            │
-                      mqtt_executor.py (paho-mqtt 2.x) ──> metrics.py (logs latency)
+                      src/hardware/mqtt_executor.py (paho-mqtt 2.x)
                             │
                       Mosquitto Broker (TCP 1883) ──Wi-Fi──> ESP32 Dev Board
                                                                   │
@@ -34,175 +28,151 @@ Voice Command     ──> command_processor.py (Groq Qwen Contextual Decision)
 
 ---
 
-## ✨ Key Features
-
-- **Unified Single-Key AI Pipeline**: The entire AI stack (Speech-to-Text, Natural Language Parsing, Spatial Scene Reasoning, and Intent Decisions) runs via **Groq** (`qwen/qwen3.8-27b` and `whisper-large-v3`), delivering sub-200ms cloud inference.
-- **Open Hardware Execution Layer**: Replaced proprietary Tuya cloud APIs with a local **Mosquitto MQTT broker** and **ESP32 microcontroller**, ensuring LAN operation without external cloud vendor lock-in.
-- **Zero `eval()` Security**: All parsing across LLM responses and natural language inputs is hardened via [safe_parse.py](safe_parse.py) using abstract syntax trees (`ast.literal_eval`) and JSON schema validation, rejecting hostile inputs.
-- **Hardware-Free Dry-Run Mode**: Set `MQTT_DRY_RUN=true` to test the full voice and vision pipeline on a laptop without physical hardware connected.
-- **End-to-End Latency Instrumentation**: [metrics.py](metrics.py) automatically records microsecond-precision stage timings (`record`, `stt_api`, `llm_decision`, `parse`, `mqtt_publish`, `esp32_ack`) into `logs/metrics.csv`.
-- **Preflight Diagnostics**: Built-in verification tool ([scripts/preflight.py](scripts/preflight.py)) checks API connectivity, models, and broker reachability before runtime.
-
----
-
-## 📁 Repository Structure
+## 📁 Project Structure
 
 ```text
 .
-├── main.py                     # Main application entrypoint
-├── camera_capture.py           # Webcam capture with auto-exposure warmup
-├── transcriptor.py             # Audio recording & Groq Whisper STT
-├── nl_processor.py             # Natural language device extraction (Groq Qwen)
-├── annotator.py                # Visual bounding-box layout & interactive GUI
-├── spatial_inferencer.py       # Spatial relationship reasoning (Groq Qwen)
-├── command_processor.py        # Conversational command loop (Groq Qwen)
-├── safe_parse.py               # AST-based safe parser (eliminates eval)
-├── mqtt_executor.py            # Paho-MQTT 2.x publisher & ACK monitor
-├── metrics.py                  # Latency instrumentation helper
-├── mosquitto.conf              # Mosquitto broker config (0.0.0.0:1883)
-├── requirements.txt            # Python dependencies
-├── .env.example                # Environment variable configuration template
-├── esp32/
-│   ├── inot_esp32.ino          # Arduino C++ firmware with LWT and ACK publishing
-│   └── config.example.h        # Wi-Fi and MQTT IP template
-├── scripts/
-│   └── preflight.py            # Self-test diagnostic utility
-└── tests/
-    ├── test_safe_parse.py      # Unit tests for secure parsing & hostile inputs
-    └── test_pipeline.py        # Integration tests for MQTT, camera, and metrics
+├── main.py                          # CLI onboarding entry point (thin wrapper)
+├── pipeline.py                      # Runtime pipeline entry point (thin wrapper)
+├── server.py                        # Web server entry point (thin wrapper)
+├── requirements.txt                 # Python dependencies
+├── .env                             # Environment config (gitignored)
+│
+├── src/                             # ════ Main source package ════
+│   ├── __init__.py
+│   ├── main.py                      # CLI onboarding (camera → annotate → spatial → commands)
+│   ├── pipeline.py                  # Runtime pipeline (STT → fast-path/LLM → MQTT)
+│   │
+│   ├── core/                        # Shared utilities & config
+│   │   ├── config.py                # Central Settings dataclass from .env
+│   │   ├── metrics.py               # Latency instrumentation to logs/metrics.csv
+│   │   ├── safe_parse.py            # AST-based safe parser (no eval)
+│   │   └── room_context.py          # room_context.json loader, validator, queries
+│   │
+│   ├── ai/                          # AI & decision modules
+│   │   ├── llm_backend.py           # Ollama / Groq LLM abstraction
+│   │   ├── fast_path.py             # Deterministic rule-based intent matcher
+│   │   ├── command_processor.py     # Conversational command loop (legacy PC)
+│   │   ├── nl_processor.py          # NL device extraction ("two lights" → {light:2})
+│   │   └── spatial_inferencer.py    # Spatial relationship reasoning via VLM
+│   │
+│   ├── audio/                       # Speech-to-text modules
+│   │   ├── stt_backend.py           # Vosk / faster-whisper / Groq Whisper abstraction
+│   │   └── transcriptor.py          # Legacy Groq-only STT + mic recording
+│   │
+│   ├── onboarding/                  # PC-side onboarding pipeline
+│   │   ├── onboarder.py             # Orchestrates: mic → NL → annotate → spatial
+│   │   ├── annotator.py             # OWLv2 detection + interactive bbox GUI
+│   │   └── camera_capture.py        # Webcam capture with auto-exposure warmup
+│   │
+│   ├── hardware/                    # Device execution layer
+│   │   └── mqtt_executor.py         # MQTT publisher, ACK monitor, device registry
+│   │
+│   └── web/                         # Web dashboard & API server
+│       ├── server.py                # FastAPI backend (REST + WebSocket + twin)
+│       ├── static/                  # Dashboard HTML/CSS/JS
+│       └── twin/                    # Digital twin single-page app
+│
+├── config/                          # ════ Configuration templates ════
+│   ├── .env.example                 # Environment variable template
+│   ├── mosquitto.conf               # Mosquitto broker config
+│   ├── docker-compose.yml           # Docker services (Mosquitto + Ollama)
+│   └── room_context.example.json    # Example room context schema
+│
+├── firmware/                        # ════ ESP32 firmware ════
+│   └── inot_esp32/
+│       ├── inot_esp32.ino           # Arduino C++ firmware with LWT & ACK
+│       ├── config.h                 # Wi-Fi & MQTT config (gitignored)
+│       └── config.example.h         # Config template
+│
+├── data/                            # ════ Data files ════
+│   └── room_context_room.json       # Example room context for benchmarks
+│
+├── scripts/                         # ════ Utility scripts ════
+│   ├── preflight.py                 # PC preflight diagnostics
+│   ├── preflight_pi.py              # Raspberry Pi preflight diagnostics
+│   ├── run_benchmark.py             # 120+ test case evaluation suite
+│   ├── metrics_summary.py           # Metrics CSV analysis
+│   ├── mic_helper.py                # USB mic detection & test
+│   ├── setup_pi.sh                  # Raspberry Pi setup script
+│   └── start_broker.bat             # Windows Mosquitto launcher
+│
+├── deploy/                          # ════ Deployment configs ════
+│   └── systemd/
+│       ├── inot-mark1@.service      # Pipeline systemd unit
+│       └── inot-twin@.service       # Server/twin systemd unit
+│
+├── docs/                            # ════ Documentation ════
+│   ├── readme.md                    # Original detailed README
+│   └── README_PI.md                 # Raspberry Pi setup guide
+│
+├── tests/                           # ════ Test suite ════
+│   ├── test_config.py               # Config loading tests
+│   ├── test_safe_parse.py           # Parsing security tests
+│   ├── test_fast_path.py            # Intent matcher tests
+│   ├── test_room_context.py         # Room context validation tests
+│   ├── test_executor.py             # MQTT executor tests
+│   ├── test_pipeline.py             # Pipeline integration tests
+│   ├── test_e2e.py                  # End-to-end pipeline tests
+│   ├── test_server.py               # FastAPI server tests
+│   └── fixtures/
+│       └── test_command.wav         # Test audio fixture
+│
+├── images/                          # Captured scene images
+└── logs/                            # Runtime metrics CSV logs
 ```
 
 ---
 
-## 🛠️ Setup Instructions
+## 🛠️ Quick Start
 
-### 1. Prerequisites
-- **Python**: Version 3.10 to 3.14
-- **Mosquitto MQTT Broker**: [Download Mosquitto](https://mosquitto.org/download/) or `winget install EclipseFoundation.Mosquitto`
-- **Arduino IDE**: with ESP32 board support and the `PubSubClient` library installed.
-
-### 2. Clone the Repository
-```bash
-git clone https://github.com/Jashdhokiya/VLM-based-smart-home-assistant.git
-cd VLM-based-smart-home-assistant
-```
-
-### 3. Create Virtual Environment & Install Dependencies
+### 1. Install Dependencies
 ```bash
 python -m venv .venv
-
-# On Windows:
-.\.venv\Scripts\activate
-pip install -r requirements.txt
-
-# On Linux / macOS:
-source .venv/bin/activate
+.venv\Scripts\activate        # Windows
 pip install -r requirements.txt
 ```
 
-### 4. Configure Environment Variables
-Copy the `.env.example` file to `.env`:
+### 2. Configure Environment
 ```bash
-cp .env.example .env
-```
-Open `.env` and add your **Groq API Key**:
-```dotenv
-GROQ_API_KEY=gsk_your_groq_api_key_here
-
-AI_PROVIDER=groq
-GROQ_LLM_MODEL=qwen/qwen3.8-27b
-GROQ_COMMAND_MODEL=qwen/qwen3.8-27b
-GROQ_WHISPER_MODEL=whisper-large-v3
-
-MQTT_BROKER_HOST=localhost
-MQTT_BROKER_PORT=1883
-MQTT_DRY_RUN=true
-ENABLED_DEVICES=Light1,Light2
+copy config\.env.example .env
+# Edit .env with your GROQ_API_KEY
 ```
 
----
-
-## 🔌 Hardware Setup (ESP32)
-
-### Pin Mapping
-| Device Name | GPIO Pin | MQTT Set Topic | MQTT State (ACK) Topic |
-| :--- | :--- | :--- | :--- |
-| **Light1** | **GPIO 18** | `inot/devices/light1/set` | `inot/devices/light1/state` |
-| **Light2** | **GPIO 19** | `inot/devices/light2/set` | `inot/devices/light2/state` |
-
-*Wiring: GPIO ──> 220Ω Resistor ──> LED (Long leg / Anode) ──> LED (Short leg / Cathode) ──> GND*
-
-> **Critical Placement Rule**: The camera numbers devices sequentially from **left to right** in the frame. Position the LED wired to GPIO 18 (`Light1`) on the left side, and GPIO 19 (`Light2`) to its right.
-
-### Flash Firmware
-1. Copy `esp32/config.example.h` to `esp32/config.h`:
-   ```bash
-   cp esp32/config.example.h esp32/config.h
-   ```
-2. Edit `esp32/config.h` with your Wi-Fi SSID, Password, and your laptop's LAN IP address (found via `ipconfig` or `ip a`).
-3. Open `esp32/inot_esp32.ino` in Arduino IDE, select your ESP32 board, and click **Upload**.
-
----
-
-## 🚦 Verification & Running
-
-### Step 1: Run Preflight Diagnostics
-Verify that your API keys, models, and network reachability pass:
+### 3. Run Pipeline (Pi / Headless)
 ```bash
-python scripts/preflight.py
+python pipeline.py --text "turn on light1"       # direct text
+python pipeline.py --wav tests/fixtures/test_command.wav  # WAV file
+python pipeline.py --loop                         # live mic loop
 ```
 
-### Step 2: Run Unit Tests
-```bash
-pytest -o pythonpath=. tests -v
-```
-
-### Step 3: Start Mosquitto Broker (When using physical ESP32)
-```bash
-mosquitto -c mosquitto.conf -v
-```
-
-### Step 4: Run the Assistant (CLI Loop)
-```bash
-python main.py
-```
-
-1. **Scene Capture**: The webcam takes a snapshot of your room.
-2. **Voice Onboarding**: Speak into your microphone:
-   > *"two lights"*
-3. **Annotation GUI**: An interactive window shows bounding boxes. Drag boxes to align with your LEDs, or press **`a`** to accept.
-4. **Command Execution**: Give natural language commands:
-   - *"Turn on Light 1"*
-   - *"Turn off Light 1"*
-   - *"Turn on the light near the window"* (resolved through spatial reasoning)
-   - *"Exit"* (cleanly stops the assistant)
-
-### Step 5: Run the Web Dashboard
-Launch the real-time web dashboard for device monitoring, interactive toggles, live mic input, and spatial telemetry:
+### 4. Run Web Dashboard
 ```bash
 python server.py
+# Open http://localhost:8000
 ```
-Open [http://localhost:8000](http://localhost:8000) in your browser:
-- **Interactive Device Matrix**: View appliances, their ON/OFF states, GPIO pins, and click toggles.
-- **Voice Control Orb**: Click the microphone button to speak natural language commands (supports Browser Web Speech API, Groq Whisper cloud transcription, or laptop mic).
-- **Spatial Awareness & Scene View**: Live inspection of spatial layout grounded in your camera frame.
-- **Telemetry Stream**: Real-time WebSocket activity terminal tracking sub-millisecond MQTT ACKs and LLM decision latency.
+
+### 5. Run Tests
+```bash
+pytest tests/ -v
+```
 
 ---
 
-## 📊 Latency Metrics
+## 📊 Current Status
 
-All stage durations are logged to `logs/metrics.csv` with the following schema:
-- `timestamp_iso`: UTC timestamp of the command execution
-- `run_id`: Unique run identifier
-- `platform`: Host device (`laptop` or `rpi`)
-- `command_id`: Correlating identifier for multi-stage command runs
-- `stage`: Measured pipeline stage (`nl_extract`, `spatial_gpt`, `stt_api`, `llm_decision`, `parse`, `mqtt_publish`, `esp32_ack`)
-- `duration_ms`: Duration in milliseconds
-- `note`: Context details or payload
+| Component | Status | Notes |
+|:---|:---|:---|
+| **Edge AI Pipeline** | ✅ Tested on RPi | Complex commands via Ollama (qwen2.5) with high accuracy |
+| **Fast-Path Rules** | ✅ Working | Deterministic matching for simple on/off commands |
+| **Rule Parser** | ✅ Done (on RPi) | Updated directly on RPi — needs to be pushed to git |
+| **Onboarding Engine** | 🚧 In Progress | Photo → cloud VLM → room_context.json (friend working on this) |
+| **Phone Mic Input** | ⏳ Next | Stream phone mic audio to RPi for voice commands |
+| **Web Dashboard** | ✅ Working | Real-time device control, WebSocket state sync |
 
 ---
 
-## 📜 References & Acknowledgements
-- **INOT Paper**: *Intelligence of Things: An Edge-Cloud Vision-Language-Action Architecture for Smart Environments* (arXiv:2504.13942).
-- Built with [Groq](https://groq.com/), [Eclipse Mosquitto](https://mosquitto.org/), and [ESP32 Arduino](https://github.com/espressif/arduino-esp32).
+## 📜 References
+- **INOT Paper**: *Intelligence of Things: An Edge-Cloud VLA Architecture for Smart Environments* (arXiv:2504.13942)
+- Built with [Groq](https://groq.com/), [Ollama](https://ollama.ai/), [Eclipse Mosquitto](https://mosquitto.org/), and [ESP32 Arduino](https://github.com/espressif/arduino-esp32)
+

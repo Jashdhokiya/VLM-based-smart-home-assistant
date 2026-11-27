@@ -49,7 +49,7 @@ def _build_device_registry() -> Dict[str, Dict[str, str]]:
     ctx_path = Path(os.getenv("ROOM_CONTEXT_PATH", "room_context.json"))
     # Try project-relative path
     if not ctx_path.is_absolute():
-        ctx_path = Path(__file__).resolve().parent / ctx_path
+        ctx_path = Path(__file__).resolve().parent.parent.parent / ctx_path
 
     if ctx_path.exists():
         try:
@@ -244,7 +244,7 @@ def _on_message(client, userdata, msg):
             dev = info["device"]
             print(f"[ESP32-ACK] {dev} {payload} ({elapsed_ms:.0f} ms after publish)")
             try:
-                import metrics
+                import src.core.metrics as metrics
                 metrics.log_stage("esp32_ack", elapsed_ms, note=f"{dev} {payload}")
             except Exception:
                 pass
@@ -434,7 +434,7 @@ def execute(device: str, command: str) -> bool:
 
         pub_duration_ms = (time.perf_counter() - start_pub) * 1000.0
         try:
-            import metrics
+            import src.core.metrics as metrics
             metrics.log_stage("mqtt_publish", pub_duration_ms, note=f"{canonical_dev} {payload_str}")
         except Exception:
             pass

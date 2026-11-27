@@ -17,8 +17,8 @@ import wave
 from pathlib import Path
 from typing import Optional
 
-from config import settings
-import metrics
+from src.core.config import settings
+from src.core import metrics
 
 # ---------------------------------------------------------------------------
 # Lazy-loaded backend singletons (save RAM on Pi)

@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-import room_context
+from src.core import room_context
 
 
 # ── Intent patterns ──────────────────────────────────────────────────

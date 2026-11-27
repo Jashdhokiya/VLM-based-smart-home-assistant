@@ -28,7 +28,7 @@ def client(monkeypatch, tmp_path):
     sys.modules.setdefault("transcriptor", MagicMock())
 
     from fastapi.testclient import TestClient
-    import server
+    from src.web import server
     with TestClient(server.app) as c:
         yield c
 
@@ -134,7 +134,7 @@ def test_context_post_and_get(client, tmp_path, monkeypatch):
     monkeypatch.setenv("ROOM_CONTEXT_PATH", str(ctx_file))
 
     # Reload mqtt_executor so it picks up the new path
-    import mqtt_executor
+    import src.hardware.mqtt_executor as mqtt_executor
     monkeypatch.setattr(mqtt_executor, "ALL_DEVICES", mqtt_executor._build_device_registry())
 
     res = client.post("/context", json=ctx)
@@ -164,7 +164,7 @@ def test_command_endpoint(client):
         "executed": {"light1": {"success": True}},
         "duration_ms": 5.0,
     }
-    with patch("pipeline.process_command", return_value=mock_result):
+    with patch("src.pipeline.process_command", return_value=mock_result):
         res = client.post("/api/command", json={"query": "turn on light1"})
     assert res.status_code == 200
     data = res.json()

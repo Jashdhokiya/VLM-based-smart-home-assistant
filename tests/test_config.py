@@ -12,7 +12,7 @@ def test_settings_load(monkeypatch):
     monkeypatch.setenv("ENABLED_DEVICES", "Light1,Fan1")
     monkeypatch.setenv("MQTT_BROKER_PORT", "1883")
 
-    from config import Settings
+    from src.core.config import Settings
     s = Settings.load()
 
     assert s.platform == "rpi"
@@ -29,7 +29,7 @@ def test_settings_defaults(monkeypatch):
     for key in ("PLATFORM", "STT_BACKEND", "LLM_BACKEND"):
         monkeypatch.delenv(key, raising=False)
 
-    from config import Settings
+    from src.core.config import Settings
     s = Settings.load()
 
     assert s.platform == "pc"
@@ -45,7 +45,7 @@ def test_settings_bool_parsing(monkeypatch):
     monkeypatch.setenv("TTS_ENABLED", "yes")
     monkeypatch.setenv("WAKE_WORD_ENABLED", "0")
 
-    from config import Settings
+    from src.core.config import Settings
     s = Settings.load()
 
     assert s.mqtt_dry_run is False

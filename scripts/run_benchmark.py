@@ -37,8 +37,8 @@ sys.path.insert(0, str(ROOT_DIR))
 # Ensure offline execution for testing
 os.environ["MQTT_DRY_RUN"] = "true"
 
-import room_context
-import pipeline
+from src.core import room_context
+from src import pipeline
 
 
 def T(query, expected, category, forbid=None):

@@ -1,12 +1,15 @@
 import os
-import nl_processor
-import annotator
+from pathlib import Path
+from src.ai import nl_processor
+from src.onboarding import annotator
 import pyttsx3
-import transcriptor
-import spatial_inferencer
-import safe_parse
-import metrics
+from src.audio import transcriptor
+from src.ai import spatial_inferencer
+from src.core import safe_parse
+from src.core import metrics
 from dotenv import load_dotenv
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 load_dotenv()
 
@@ -57,7 +60,8 @@ def onboarding_system(file_path):
     with metrics.stage("spatial_gpt"):
         spatial = spatial_inferencer.information(object_list)
 
-    with open("spatial_information.txt", "w", encoding="utf-8") as file:
+    spatial_path = _PROJECT_ROOT / "spatial_information.txt"
+    with open(spatial_path, "w", encoding="utf-8") as file:
         file.write(spatial)
 
     print("[ONBOARDING] Spatial Data Saved to spatial_information.txt.")
