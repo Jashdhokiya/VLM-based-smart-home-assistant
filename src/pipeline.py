@@ -33,9 +33,21 @@ from src.core.config import settings
 from src.core import metrics
 from src.core import room_context
 from src.ai import fast_path
+from src.ai import rule_parser
 from src.core import safe_parse
 from src.audio import stt_backend
 from src.ai import llm_backend
+
+# Queries with these words skip the simple fast_path (it ignores "except", "then", etc.)
+_RISKY_RE = re.compile(r"\b(except|but|not|dont|then|and|after|actually|instead|wait)\b|[,;]", re.I)
+_rp_cache: Optional[tuple] = None
+
+
+def _run_rule_parser(text: str, ctx: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    global _rp_cache
+    if _rp_cache is None or _rp_cache[0] != id(ctx):
+        _rp_cache = (id(ctx), rule_parser.RoomModel(ctx))
+    return rule_parser.parse(text, _rp_cache[1])
 
 
 # ── Globals ───────────────────────────────────────────────────────────
@@ -194,14 +206,24 @@ def process_command(
         "duration_ms": 0,
     }
 
-    # ── 1. Fast path ──────────────────────────────────────────────
-    with metrics.stage("fast_path", command_id=cid):
-        fp_result = fast_path.match(text, ctx)
+    # ── 1. Rule parser / Fast path ────────────────────────────────
+    fp_result = None
+    path_name = "fast_path"
+    try:
+        fp_result = _run_rule_parser(text, ctx)
+    except Exception as e:
+        print(f"[PIPELINE] [WARN] rule parser failed: {e}")
 
     if fp_result:
-        result["path"] = "fast_path"
+        path_name = "rules"
+    elif not _RISKY_RE.search(text):
+        with metrics.stage("fast_path", command_id=cid):
+            fp_result = fast_path.match(text, ctx)
+
+    if fp_result:
+        result["path"] = path_name
         result["commands"] = fp_result
-        print(f"[PIPELINE] Fast path matched: {fp_result}")
+        print(f"[PIPELINE] {path_name} matched: {fp_result}")
     else:
         # ── 2. LLM path ──────────────────────────────────────────
         result["path"] = "llm"

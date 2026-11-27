@@ -328,6 +328,22 @@ BENCHMARK_DATA = [
 ]
 
 
+# Set env CURTAIN_ON_MEANS_OPEN=false if your hardware treats curtain "on" as CLOSED
+CURTAIN_ON_MEANS_OPEN = os.environ.get("CURTAIN_ON_MEANS_OPEN", "true").lower() != "false"
+
+
+def _fix_curtain(expected: dict) -> dict:
+    if CURTAIN_ON_MEANS_OPEN or "curtain1" not in expected:
+        return expected
+    fixed = dict(expected)
+    v = str(fixed["curtain1"]).lower()
+    if v == "on":
+        fixed["curtain1"] = "off"
+    elif v == "off":
+        fixed["curtain1"] = "on"
+    return fixed
+
+
 def compare_commands(actual: dict, expected: dict, forbid=None) -> bool:
     """
     Evaluates whether actual matches expected intent.
@@ -336,6 +352,7 @@ def compare_commands(actual: dict, expected: dict, forbid=None) -> bool:
       - no device listed in `forbid` appears in actual.
     """
     forbid = forbid or []
+    expected = _fix_curtain(expected)
 
     if not actual and not expected:
         return True
@@ -439,3 +456,39 @@ def run_benchmark(context_path: str = "room_context_room.json", max_items: int =
     # Compute overall statistics
     latencies.sort()
     avg_lat = sum(latencies) / len(latencies) if latencies else 0.0
+    min_lat = latencies[0] if latencies else 0.0
+    max_lat = latencies[-1] if latencies else 0.0
+    p95_idx = int(len(latencies) * 0.95)
+    p95_lat = latencies[min(p95_idx, len(latencies) - 1)] if latencies else 0.0
+    accuracy = (correct_count / total_tests) * 100.0 if total_tests else 0.0
+
+    print("\n════════════════════════════════════════════════════════════════")
+    print("  Benchmark Summary Results")
+    print("════════════════════════════════════════════════════════════════")
+    print(f"Total Tests : {total_tests}")
+    print(f"Accuracy    : {correct_count}/{total_tests} ({accuracy:.1f}%)")
+    print(f"Latency     : Min={min_lat:.1f}ms | Avg={avg_lat:.1f}ms | P95={p95_lat:.1f}ms | Max={max_lat:.1f}ms")
+    print("\nCategory Breakdown:")
+    print(f"{'Category':<18s} {'Accuracy':<14s} {'Avg Latency':<12s} {'P95 Latency':<12s}")
+    print("─" * 60)
+
+    for cat, stat in category_stats.items():
+        c_acc = (stat["correct"] / stat["total"]) * 100.0
+        c_lats = sorted(stat["latencies"])
+        c_avg = sum(c_lats) / len(c_lats)
+        c_p95 = c_lats[min(int(len(c_lats) * 0.95), len(c_lats) - 1)]
+        acc_str = f"{stat['correct']}/{stat['total']} ({c_acc:.0f}%)"
+        print(f"{cat:<18s} {acc_str:<14s} {c_avg:>7.1f} ms    {c_p95:>7.1f} ms")
+
+    print("════════════════════════════════════════════════════════════════")
+    print(f"Report saved to: {report_csv}")
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="INOT Mark1 Benchmark Suite")
+    parser.add_argument("--context", default="room_context_room.json", help="Context JSON file")
+    parser.add_argument("--limit", type=int, default=0, help="Limit number of test items")
+    args = parser.parse_args()
+
+    run_benchmark(args.context, args.limit)
