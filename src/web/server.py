@@ -584,6 +584,7 @@ async def onboard_push_to_rpi(payload: Optional[dict] = Body(default=None)):
 @app.get("/state")
 def get_state():
     ctx = _load_ctx_raw()
+    enabled = {d.lower() for d in mqtt_executor.enabled_devices()}
     devices_out = {}
     for name, state_val in mqtt_executor.get_device_states().items():
         meta = ALL_DEVICES_META(name)
@@ -591,6 +592,7 @@ def get_state():
         devices_out[dev_id] = {
             "name": name,
             "state": state_val,
+            "enabled": name.lower() in enabled,
             "set_topic": f"inot/devices/{dev_id}/set",
             "state_topic": f"inot/devices/{dev_id}/state",
             **meta,
@@ -608,16 +610,23 @@ def ALL_DEVICES_META(name: str) -> dict:
     base = DEVICE_METADATA.get(name, {})
     ctx = _load_ctx_raw()
     if ctx:
+        name_lower = name.lower()
         for dev in ctx.get("devices", []):
-            if dev.get("name") == name:
+            dev_name = str(dev.get("name", ""))
+            dev_id = str(dev.get("id", ""))
+            if dev_name == name or dev_name.lower() == name_lower or dev_id.lower() == name_lower:
+                dev_type = dev.get("type", "light")
+                zone = dev.get("zone", "room")
+                x = dev.get("x", 0.5)
+                y = dev.get("y", 0.5)
                 return {
-                    "type": dev.get("type", "light"),
-                    "zone": dev.get("zone", "room"),
-                    "x": dev.get("x", 0.5),
-                    "y": dev.get("y", 0.5),
+                    "type": dev_type,
+                    "zone": zone,
+                    "x": x,
+                    "y": y,
                     "near": dev.get("near", []),
-                    "label": base.get("label", name),
-                    "icon": base.get("icon", "device"),
+                    "label": base.get("label", dev_name or name),
+                    "icon": base.get("icon", dev_type),
                 }
     return {
         "type": "light",
@@ -642,27 +651,31 @@ def get_devices():
     for dev_name, info in mqtt_executor.ALL_DEVICES.items():
         is_enabled = dev_name.lower() in enabled
         curr_state = states.get(dev_name, "OFF").upper()
-        meta = DEVICE_METADATA.get(dev_name, {
-            "label": dev_name,
-            "icon": "lightbulb",
-            "pin": "N/A",
-            "room": "General",
-            "spatial_position": "Unknown",
-            "description": f"Smart appliance {dev_name}",
-        })
+        dyn_meta = ALL_DEVICES_META(dev_name)
+        static_meta = DEVICE_METADATA.get(dev_name, {})
+        x = dyn_meta.get("x", 0.5)
+        y = dyn_meta.get("y", 0.5)
+        zone = dyn_meta.get("zone", "room")
+        dev_type = dyn_meta.get("type", "light")
+        near = dyn_meta.get("near", [])
         device_list.append({
             "name": dev_name,
             "id": info.get("id", dev_name.lower()),
-            "label": meta["label"],
+            "label": static_meta.get("label") or dyn_meta.get("label") or dev_name,
+            "type": dev_type,
             "state": curr_state,
             "enabled": is_enabled,
             "topic_set": info["topic"],
             "topic_state": info["state"],
-            "pin": meta.get("pin", "N/A"),
-            "room": meta.get("room", "General"),
-            "spatial_position": meta.get("spatial_position", "Unknown"),
-            "icon": meta.get("icon", "lightbulb"),
-            "description": meta.get("description", ""),
+            "pin": static_meta.get("pin", "MQTT"),
+            "room": static_meta.get("room") or zone,
+            "zone": zone,
+            "x": x,
+            "y": y,
+            "near": near,
+            "spatial_position": static_meta.get("spatial_position") or f"({float(x):.2f}, {float(y):.2f})",
+            "icon": static_meta.get("icon") or dev_type,
+            "description": static_meta.get("description") or f"Smart {dev_type} in {zone}",
         })
     return {"devices": device_list}
 
@@ -704,11 +717,16 @@ def set_device(device_name: str, payload: dict):
     cmd = payload.get("state", "On").capitalize()
     if cmd not in ("On", "Off"):
         raise HTTPException(status_code=400, detail="State must be 'On' or 'Off'.")
-    success = mqtt_executor.execute(device_name, cmd)
+    canonical = device_name
+    for d, info in mqtt_executor.ALL_DEVICES.items():
+        if d.lower() == device_name.lower() or info.get("id", "").lower() == device_name.lower():
+            canonical = d
+            break
+    success = mqtt_executor.execute(canonical, cmd)
     return {
         "success": success,
-        "device": device_name,
-        "state": mqtt_executor.get_device_state(device_name),
+        "device": canonical,
+        "state": mqtt_executor.get_device_state(canonical),
         "command": cmd,
     }
 
@@ -726,7 +744,8 @@ def batch_action(payload: dict):
             results[dev] = mqtt_executor.execute(dev, "Off")
     elif action == "study_mode":
         for dev in enabled:
-            cmd = "On" if "1" in dev else "Off"
+            zone = ALL_DEVICES_META(dev).get("zone", "").lower()
+            cmd = "On" if ("1" in dev or zone in ("desk", "study")) else "Off"
             results[dev] = mqtt_executor.execute(dev, cmd)
     elif action == "night_mode":
         for dev in enabled:
@@ -890,14 +909,24 @@ def get_spatial_info():
 
 @app.get("/api/scene-image")
 def get_scene_image():
-    if ANNOTATED_IMG.exists():
-        return FileResponse(ANNOTATED_IMG, media_type="image/jpeg")
     scene_img = onboarding_engine._scene_image_path()
+    candidates = []
+    if ANNOTATED_IMG.exists():
+        candidates.append(ANNOTATED_IMG)
     if scene_img.exists():
-        return FileResponse(scene_img, media_type="image/jpeg")
-    if SCENE_IMG.exists():
-        return FileResponse(SCENE_IMG, media_type="image/jpeg")
-    raise HTTPException(status_code=404, detail="No scene image available.")
+        candidates.append(scene_img)
+    elif SCENE_IMG.exists():
+        candidates.append(SCENE_IMG)
+    if not candidates:
+        raise HTTPException(status_code=404, detail="No scene image available.")
+
+    # Serve whichever scene image was updated most recently (e.g. newly uploaded room photo)
+    chosen = max(candidates, key=lambda p: p.stat().st_mtime)
+    try:
+        mime_type = onboarding_engine.detect_image_mime(chosen.read_bytes()[:16])
+    except Exception:
+        mime_type = "image/jpeg"
+    return FileResponse(chosen, media_type=mime_type)
 
 
 # ---------------------------------------------------------------------------

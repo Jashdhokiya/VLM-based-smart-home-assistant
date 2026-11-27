@@ -3,275 +3,291 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>INOT Mark1 | Vision-Language-Action Smart Home Assistant</title>
-  <meta name="description" content="Intelligent spatial voice and vision dashboard for IoT appliances via Groq AI, Mosquitto MQTT, and ESP32 hardware.">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <title>INOT Mark1 — Smart Home Dashboard</title>
+  <meta name="description" content="Smart home control panel, room onboarding, and spatial voice commands over MQTT.">
   <link rel="stylesheet" href="/static/style.css">
 </head>
-<body class="dark-theme">
-  <!-- Ambient background glow elements -->
-  <div class="ambient-glow glow-cyan" aria-hidden="true"></div>
-  <div class="ambient-glow glow-violet" aria-hidden="true"></div>
-  <div class="ambient-glow glow-amber" aria-hidden="true"></div>
-
-  <!-- Header / Navigation Bar -->
+<body>
   <header class="app-header">
     <div class="header-container">
       <div class="brand-group">
-        <div class="brand-logo-wrap">
-          <div class="brand-logo-icon">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-            </svg>
+        <a href="/" class="brand-link">
+          <span class="brand-mark">INOT</span>
+          <div>
+            <h1 class="brand-title">Mark1</h1>
+            <p class="brand-subtitle">Smart Home Control Console</p>
           </div>
-          <span class="pulse-dot active" title="System Live"></span>
-        </div>
-        <div class="brand-titles">
-          <h1 class="brand-title">INOT <span class="brand-tag">Mark1</span></h1>
-          <p class="brand-subtitle">VLA Edge-Cloud Smart Assistant &bull; arXiv:2504.13942</p>
-        </div>
+        </a>
+        <nav class="main-nav" aria-label="Primary">
+          <a href="/" class="nav-link active">Dashboard</a>
+          <a href="/twin" class="nav-link">Digital Twin</a>
+        </nav>
       </div>
 
-      <!-- Live Telemetry Badges -->
       <div class="telemetry-bar">
         <div class="telemetry-pill" id="pillEsp32" title="ESP32 Firmware Status">
-          <span class="status-indicator" id="indEsp32"></span>
+          <span class="status-dot" id="indEsp32"></span>
           <span class="pill-label">ESP32</span>
           <span class="pill-val" id="valEsp32">Checking...</span>
         </div>
         <div class="telemetry-pill" id="pillMqtt" title="MQTT Broker Status">
-          <span class="status-indicator" id="indMqtt"></span>
+          <span class="status-dot" id="indMqtt"></span>
           <span class="pill-label">MQTT</span>
           <span class="pill-val" id="valMqtt">Connecting...</span>
         </div>
-        <div class="telemetry-pill" id="pillAi" title="Active AI Provider">
-          <span class="status-indicator online"></span>
-          <span class="pill-label">AI</span>
-          <span class="pill-val" id="valAi">Groq Qwen 3.8</span>
+        <div class="telemetry-pill" id="pillAi" title="Active Command LLM">
+          <span class="status-dot online" id="indAi"></span>
+          <span class="pill-label">LLM</span>
+          <span class="pill-val" id="valAi">Loading...</span>
         </div>
-        <button id="btnDiagnostics" class="btn-icon" title="View System Architecture & Preflight">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="16" x2="12" y2="12"></line>
-            <line x1="12" y1="8" x2="12.01" y2="8"></line>
-          </svg>
+        <div class="telemetry-pill" id="pillOnboard" title="Cloud Onboarding Readiness">
+          <span class="status-dot" id="indOnboard"></span>
+          <span class="pill-label">Onboard</span>
+          <span class="pill-val" id="valOnboard">Checking...</span>
+        </div>
+        <button id="btnDiagnostics" class="btn btn-ghost btn-sm" type="button" title="System Diagnostics &amp; Device Table">
+          Diagnostics
         </button>
       </div>
     </div>
   </header>
 
-  <!-- Main Content Layout -->
   <main class="app-main">
-    <div class="dashboard-grid">
+    <div class="dashboard-layout">
 
-      <!-- SECTION 1: Voice & AI Intelligence Center (HERO) -->
-      <section class="card hero-voice-card" id="voiceControlSection">
+      <!-- Devices & Controls -->
+      <section class="card span-full" id="appliancesSection">
         <div class="card-header">
-          <div class="header-left">
-            <span class="header-icon-wrap violet-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                <line x1="12" y1="19" x2="12" y2="23"></line>
-                <line x1="8" y1="23" x2="16" y2="23"></line>
-              </svg>
-            </span>
-            <div>
-              <h2 class="section-title">Voice & Natural Language Control</h2>
-              <p class="section-desc">Speak naturally or type. Spatial VLM maps intent to appliances in real-time.</p>
-            </div>
+          <div>
+            <h2 class="section-title">Devices <span class="badge-muted" id="roomTitleBadge">Room</span></h2>
+            <p class="section-desc">Live device registry from <code>room_context.json</code> and MQTT state sync.</p>
+          </div>
+          <div class="batch-controls">
+            <button id="btnBatchAllOn" class="btn btn-secondary btn-sm" type="button">All On</button>
+            <button id="btnBatchAllOff" class="btn btn-secondary btn-sm" type="button">All Off</button>
+            <button id="btnBatchStudy" class="btn btn-secondary btn-sm" type="button">Study Mode</button>
+            <button id="btnRefreshDevices" class="btn btn-ghost btn-sm" type="button">Refresh</button>
+          </div>
+        </div>
+
+        <div class="devices-grid" id="devicesGrid">
+          <div class="empty-state">Loading devices...</div>
+        </div>
+      </section>
+
+      <!-- Voice & Command Control -->
+      <section class="card" id="voiceControlSection">
+        <div class="card-header">
+          <div>
+            <h2 class="section-title">Commands &amp; Voice</h2>
+            <p class="section-desc">Send natural-language commands via fast-path or LLM.</p>
           </div>
           <div class="voice-mode-selector">
             <label for="selectVoiceEngine" class="sr-only">Voice STT Engine</label>
-            <select id="selectVoiceEngine" class="select-dropdown" title="Choose Speech Recognition Mode">
-              <option value="browser" selected>⚡ Browser Speech (Zero Latency)</option>
-              <option value="whisper">🎙️ Groq Whisper (Cloud High-Accuracy)</option>
-              <option value="server">💻 Host Laptop Mic (PyAudio)</option>
+            <select id="selectVoiceEngine" class="input-control input-sm" title="Speech Recognition Engine">
+              <option value="browser" selected>Browser Speech API</option>
+              <option value="whisper">Record &rarr; /api/voice/process-audio</option>
+              <option value="server">Server Mic (/api/voice/server-mic)</option>
             </select>
           </div>
         </div>
 
-        <div class="voice-center-body">
-          <!-- Big Glowing Microphone Button -->
-          <div class="mic-orb-container">
-            <div class="mic-ripple-ring" id="micRipple1"></div>
-            <div class="mic-ripple-ring" id="micRipple2"></div>
-            <button id="btnVoiceRecord" class="mic-button" aria-label="Start Voice Recording" title="Click to start microphone">
-              <div class="mic-inner-core">
-                <svg id="micIconIdle" class="mic-svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                  <line x1="12" y1="19" x2="12" y2="23"></line>
-                  <line x1="8" y1="23" x2="16" y2="23"></line>
-                </svg>
-                <div id="micWaveAnimation" class="sound-wave-bars hidden" aria-hidden="true">
-                  <span></span><span></span><span></span><span></span><span></span>
-                </div>
-              </div>
-            </button>
-            <p class="mic-status-label" id="micStatusText">Click to Speak</p>
-          </div>
-
-          <!-- Audio Visualizer Canvas -->
-          <div class="visualizer-wrapper">
-            <canvas id="audioVisualizerCanvas" width="500" height="60"></canvas>
-          </div>
-
-          <!-- Real-Time Transcript & Reasoning Display -->
-          <div class="ai-feedback-container" id="aiFeedbackContainer">
-            <div class="transcript-row">
-              <span class="transcript-badge">Voice Input:</span>
-              <p class="transcript-text" id="liveTranscript">"Waiting for voice command or prompt..."</p>
-            </div>
-            
-            <div class="reasoning-row" id="reasoningRow">
-              <div class="reasoning-meta">
-                <span class="reasoning-badge">AI Decision:</span>
-                <span class="latency-tag" id="lastCommandLatency">⚡ 0ms</span>
-              </div>
-              <div class="reasoning-content" id="aiReasoningContent">
-                <span class="reasoning-placeholder">LLM action dictionary and spatial mappings will render here.</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Text Command Bar Fallback -->
-          <form id="textCommandForm" class="command-input-form" onsubmit="return false;">
-            <div class="input-glow-wrapper">
-              <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="11" cy="11" r="8"></circle>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-              </svg>
-              <input type="text" id="inputCommandQuery" class="command-input" placeholder="Or type e.g. 'Turn on the left light', 'I am going to sleep'..." autocomplete="off">
-              <button type="submit" id="btnSubmitCommand" class="btn-submit" aria-label="Send Command">
-                <span>Run</span>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="22" y1="2" x2="11" y2="13"></line>
-                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                </svg>
-              </button>
-            </div>
+        <div class="command-stack">
+          <form id="textCommandForm" class="command-form" onsubmit="return false;">
+            <input
+              type="text"
+              id="inputCommandQuery"
+              class="input-control"
+              placeholder="Type a command, e.g. 'turn on desk lamp' or 'turn off everything'..."
+              autocomplete="off"
+            >
+            <button type="submit" id="btnSubmitCommand" class="btn btn-primary">Send</button>
           </form>
 
-          <!-- Prompt Quick Chips -->
+          <div class="voice-controls-row">
+            <button id="btnVoiceRecord" class="btn btn-secondary" type="button">
+              <span class="rec-dot" id="recDot"></span>
+              <span id="micBtnLabel">Start Voice</span>
+            </button>
+            <span class="mic-status-text" id="micStatusText">Ready</span>
+            <canvas id="audioVisualizerCanvas" width="260" height="32" aria-label="Audio level"></canvas>
+          </div>
+
           <div class="quick-chips-wrapper">
-            <span class="chips-title">Quick Commands:</span>
-            <div class="chips-list">
-              <button class="prompt-chip" data-cmd="Turn on the left light">💡 Left Light On</button>
-              <button class="prompt-chip" data-cmd="Turn on the light near the window">🪟 Light Near Window</button>
-              <button class="prompt-chip" data-cmd="I am going to sleep">🌙 Sleep Mode</button>
-              <button class="prompt-chip" data-cmd="I completed studying">📚 Finished Studying</button>
-              <button class="prompt-chip" data-cmd="Leaving the room">🚪 Leaving Room</button>
-              <button class="prompt-chip" data-cmd="Turn on all lights">☀️ All Lights On</button>
+            <span class="field-label">Quick commands:</span>
+            <div class="chips-list" id="quickChipsList">
+              <button class="prompt-chip" type="button" data-cmd="Turn on all lights">Turn on all lights</button>
+              <button class="prompt-chip" type="button" data-cmd="Turn off everything">Turn off everything</button>
+            </div>
+          </div>
+
+          <div class="command-result-box" id="aiFeedbackContainer">
+            <div class="result-row">
+              <span class="result-label">Input</span>
+              <span class="result-value" id="liveTranscript">No command sent yet.</span>
+              <span class="latency-tag" id="lastCommandLatency">—</span>
+            </div>
+            <div class="result-row result-row-col">
+              <span class="result-label">Execution Result</span>
+              <div class="reasoning-content" id="aiReasoningContent">
+                <span class="muted">Command actions and execution status will appear here.</span>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- SECTION 2: Interactive Smart Appliances Matrix -->
-      <section class="card appliances-card" id="appliancesSection">
+      <!-- Scene & Spatial Grounding -->
+      <section class="card" id="spatialSection">
         <div class="card-header">
-          <div class="header-left">
-            <span class="header-icon-wrap cyan-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                <line x1="8" y1="21" x2="16" y2="21"></line>
-                <line x1="12" y1="17" x2="12" y2="21"></line>
-              </svg>
-            </span>
-            <div>
-              <h2 class="section-title">Connected Devices Matrix</h2>
-              <p class="section-desc">Toggle physical or simulated relays via Mosquitto MQTT &amp; ESP32 GPIO.</p>
-            </div>
+          <div>
+            <h2 class="section-title">Active Scene &amp; Spatial Context</h2>
+            <p class="section-desc">Current room photo and spatial mapping used by the assistant.</p>
           </div>
-
-          <!-- Batch Action Controls -->
-          <div class="batch-controls">
-            <button id="btnBatchAllOn" class="btn-secondary" title="Turn on all enabled appliances">All ON</button>
-            <button id="btnBatchAllOff" class="btn-secondary" title="Turn off all appliances">All OFF</button>
-            <button id="btnBatchStudy" class="btn-secondary" title="Study Mode (Left Desk Light)">Study Mode</button>
-          </div>
-        </div>
-
-        <!-- Devices Grid -->
-        <div class="devices-grid" id="devicesGrid">
-          <!-- Dynamically populated by app.js -->
-          <div class="loading-state">
-            <div class="spinner"></div>
-            <p>Scanning MQTT device topology...</p>
-          </div>
-        </div>
-      </section>
-
-      <!-- SECTION 3: Spatial Perception & Scene Context -->
-      <section class="card spatial-card" id="spatialSection">
-        <div class="card-header">
-          <div class="header-left">
-            <span class="header-icon-wrap amber-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-                <circle cx="12" cy="13" r="4"></circle>
-              </svg>
-            </span>
-            <div>
-              <h2 class="section-title">Spatial Vision &amp; Scene Awareness</h2>
-              <p class="section-desc">Visual grounding derived from scene camera capture &amp; Groq Qwen reasoning.</p>
-            </div>
-          </div>
-          <button id="btnRefreshSpatial" class="btn-icon" title="Refresh spatial layout">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="23 4 23 10 17 10"></polyline>
-              <polyline points="1 20 1 14 7 14"></polyline>
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-            </svg>
-          </button>
+          <button id="btnRefreshSpatial" class="btn btn-ghost btn-sm" type="button">Refresh</button>
         </div>
 
         <div class="spatial-body">
-          <div class="spatial-scene-preview" id="sceneImageContainer">
-            <img id="sceneImage" src="/api/scene-image" alt="Annotated Scene View" class="scene-img" onerror="this.parentElement.classList.add('no-image');">
+          <div class="spatial-scene-preview no-image" id="sceneImageContainer">
+            <img id="sceneImage" src="/api/scene-image" alt="Active Room Scene" class="scene-img">
             <div class="no-image-fallback">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                <circle cx="8.5" cy="8.5" r="1.5"/>
-                <polyline points="21 15 16 10 5 21"/>
-              </svg>
-              <span>Scene Image Available via Webcam Capture</span>
+              <span>No scene image uploaded yet.</span>
             </div>
           </div>
 
           <div class="spatial-text-container">
             <div class="spatial-text-header">
-              <span class="text-caption">Learned Spatial Grounding (spatial_information.txt)</span>
+              <span class="field-label">Spatial Grounding</span>
             </div>
-            <pre class="spatial-text-content" id="spatialTextContent">Loading spatial grounding description...</pre>
+            <pre class="spatial-text-content" id="spatialTextContent">Loading spatial context...</pre>
           </div>
         </div>
       </section>
 
-      <!-- SECTION 4: Live Activity Log & Latency Telemetry -->
-      <section class="card activity-card" id="activitySection">
+      <!-- Room Onboarding Engine -->
+      <section class="card span-full" id="onboardingSection">
         <div class="card-header">
-          <div class="header-left">
-            <span class="header-icon-wrap green-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-              </svg>
-            </span>
-            <div>
-              <h2 class="section-title">Telemetry &amp; Execution Stream</h2>
-              <p class="section-desc">Live WebSocket feed of MQTT publishes, ESP32 ACKs, and sub-millisecond timings.</p>
+          <div>
+            <h2 class="section-title">Room Onboarding</h2>
+            <p class="section-desc">Upload a room photo to detect devices via the cloud, review or edit the JSON draft, and apply it.</p>
+          </div>
+          <div class="onboard-readiness-group">
+            <span class="status-badge-pill" id="onboardReadinessBadge">Checking engine...</span>
+            <button id="btnLoadDraft" class="btn btn-ghost btn-sm" type="button">Load Last Draft</button>
+          </div>
+        </div>
+
+        <div class="onboard-grid">
+          <!-- Upload Panel -->
+          <form id="onboardUploadForm" class="onboard-upload-panel" onsubmit="return false;">
+            <label class="dropzone" for="onboardImageInput" id="onboardDropzone">
+              <input type="file" id="onboardImageInput" accept="image/jpeg,image/png,image/webp,image/gif" class="sr-only">
+              <img id="onboardPreviewImg" class="dropzone-preview hidden" alt="Selected room photo">
+              <div class="dropzone-placeholder" id="onboardDropPlaceholder">
+                <strong>Choose a room photo</strong>
+                <span>JPEG, PNG, WEBP, or GIF (click or drop file here)</span>
+              </div>
+            </label>
+            <p class="file-meta" id="onboardFileMeta">No file selected.</p>
+
+            <div class="form-row-2">
+              <div class="form-field">
+                <label class="field-label" for="onboardRoomName">Room Name (optional)</label>
+                <input type="text" id="onboardRoomName" class="input-control" placeholder="e.g. Bedroom">
+              </div>
+              <div class="form-field">
+                <label class="field-label" for="onboardProvider">Cloud Provider</label>
+                <select id="onboardProvider" class="input-control">
+                  <option value="">Default (from .env)</option>
+                  <option value="groq">Groq Vision</option>
+                  <option value="gemini">Gemini Vision</option>
+                  <option value="openai">OpenAI Vision</option>
+                  <option value="cloud_url">Custom Cloud URL</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-field">
+              <label class="field-label" for="onboardDeviceHints">Device Hints (optional)</label>
+              <input type="text" id="onboardDeviceHints" class="input-control" placeholder="e.g. 2 lights near desk and window, 1 ceiling fan">
+            </div>
+
+            <div class="onboard-actions">
+              <button type="button" id="btnOnboardPreview" class="btn btn-primary">Upload &amp; Generate Draft</button>
+              <button type="button" id="btnOnboardDirect" class="btn btn-secondary">Upload &amp; Apply Directly</button>
+            </div>
+
+            <div class="inline-alert hidden" id="onboardAlert" role="status"></div>
+          </form>
+
+          <!-- Draft Review & Editor Panel -->
+          <div class="onboard-draft-panel">
+            <div class="draft-toolbar">
+              <div class="draft-room-input-wrap">
+                <label class="field-label" for="draftRoomName">Draft Room</label>
+                <input type="text" id="draftRoomName" class="input-control input-sm" placeholder="Room name">
+              </div>
+
+              <div class="draft-toolbar-actions">
+                <div class="segmented" role="group" aria-label="Editor view">
+                  <button type="button" id="btnViewTable" class="seg-btn active">Table</button>
+                  <button type="button" id="btnViewJson" class="seg-btn">JSON</button>
+                </div>
+                <button type="button" id="btnAddDeviceRow" class="btn btn-ghost btn-sm">+ Add Device</button>
+              </div>
+            </div>
+
+            <div id="draftTableWrap" class="draft-table-wrap">
+              <table class="draft-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Zone</th>
+                    <th>X</th>
+                    <th>Y</th>
+                    <th>Near (comma-sep)</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="draftDevicesBody">
+                  <tr>
+                    <td colspan="8" class="empty-cell">Upload a photo or click "Load Last Draft" to review devices.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div id="draftJsonWrap" class="draft-json-wrap hidden">
+              <textarea id="draftJsonEditor" class="json-editor" spellcheck="false" placeholder='{"room_name": "Bedroom", "devices": []}'></textarea>
+            </div>
+
+            <div class="draft-footer">
+              <span class="draft-validation-text" id="draftValidationMsg">No draft loaded.</span>
+              <div class="draft-footer-btns">
+                <button type="button" id="btnValidateDraft" class="btn btn-ghost btn-sm">Validate</button>
+                <button type="button" id="btnApplyDraft" class="btn btn-primary" disabled>Apply Context</button>
+              </div>
             </div>
           </div>
-          <button id="btnClearLog" class="btn-text-small" title="Clear event log">Clear</button>
+        </div>
+      </section>
+
+      <!-- Activity Log -->
+      <section class="card span-full" id="activitySection">
+        <div class="card-header">
+          <div>
+            <h2 class="section-title">Activity Log</h2>
+            <p class="section-desc">WebSocket state updates, commands, and onboarding events.</p>
+          </div>
+          <button id="btnClearLog" class="btn btn-ghost btn-sm" type="button">Clear</button>
         </div>
 
         <div class="activity-terminal" id="activityTerminal">
           <div class="terminal-entry system">
             <span class="time">[INIT]</span>
-            <span class="content">Web dashboard initialized. Subscribed to MQTT topics and WebSocket stream.</span>
+            <span class="content">Dashboard ready. Connecting to server...</span>
           </div>
         </div>
       </section>
@@ -279,68 +295,42 @@
     </div>
   </main>
 
-  <!-- Diagnostics & Architecture Modal -->
+  <!-- Diagnostics Modal (dynamically populated from /api/devices & /api/status) -->
   <div class="modal-backdrop hidden" id="diagnosticsModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
     <div class="modal-card">
       <div class="modal-header">
-        <h3 id="modalTitle">System Architecture &amp; Hardware Diagnostics</h3>
-        <button id="btnCloseModal" class="btn-icon" aria-label="Close Modal">&times;</button>
+        <h3 id="modalTitle">System Diagnostics &amp; Active Devices</h3>
+        <button id="btnCloseModal" class="btn btn-ghost btn-sm" type="button" aria-label="Close">Close</button>
       </div>
       <div class="modal-body">
-        <div class="diag-section">
-          <h4>ESP32 Pinout &amp; MQTT Routing</h4>
-          <table class="diag-table">
-            <thead>
-              <tr>
-                <th>Device</th>
-                <th>GPIO</th>
-                <th>MQTT Set Topic</th>
-                <th>MQTT State (ACK)</th>
-                <th>Spatial Position</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><strong>Light 1</strong></td>
-                <td><span class="badge-pin">GPIO 18</span></td>
-                <td><code>inot/devices/light1/set</code></td>
-                <td><code>inot/devices/light1/state</code></td>
-                <td>Left side (Desk)</td>
-              </tr>
-              <tr>
-                <td><strong>Light 2</strong></td>
-                <td><span class="badge-pin">GPIO 19</span></td>
-                <td><code>inot/devices/light2/set</code></td>
-                <td><code>inot/devices/light2/state</code></td>
-                <td>Right side (Window)</td>
-              </tr>
-              <tr>
-                <td><strong>Light 3</strong></td>
-                <td><span class="badge-pin">GPIO 21</span></td>
-                <td><code>inot/devices/light3/set</code></td>
-                <td><code>inot/devices/light3/state</code></td>
-                <td>Center / Auxiliary</td>
-              </tr>
-              <tr>
-                <td><strong>Light 4</strong></td>
-                <td><span class="badge-pin">GPIO 22</span></td>
-                <td><code>inot/devices/light4/set</code></td>
-                <td><code>inot/devices/light4/state</code></td>
-                <td>Corner / Accent</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <div class="diag-summary-grid" id="diagSummaryGrid"></div>
 
         <div class="diag-section">
-          <h4>VLA Pipeline Flow</h4>
-          <p class="diag-note">Microphone &rarr; Whisper &rarr; Qwen 3.8 (VLM) + Spatial Context &rarr; Safe Parse &rarr; Mosquitto MQTT &rarr; ESP32 ACK.</p>
+          <h4>Active Device Registry</h4>
+          <div class="diag-table-wrap">
+            <table class="diag-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>ID</th>
+                  <th>Type</th>
+                  <th>Zone</th>
+                  <th>Pos (x, y)</th>
+                  <th>Enabled</th>
+                  <th>MQTT Set Topic</th>
+                  <th>MQTT State Topic</th>
+                </tr>
+              </thead>
+              <tbody id="diagDevicesBody">
+                <tr><td colspan="8" class="empty-cell">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Audio Chimes & Synthesis Helpers (Generated with Web Audio API in app.js) -->
   <script src="/static/app.js"></script>
 </body>
 </html>

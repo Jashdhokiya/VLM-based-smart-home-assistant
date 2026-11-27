@@ -255,10 +255,21 @@ def api_client(monkeypatch, tmp_path):
     from src.onboarding import onboarding_engine
     monkeypatch.setattr(onboarding_engine, "DEFAULT_DRAFT_FILE", tmp_path / "draft.json")
 
+    from src.hardware import mqtt_executor
+    from src import pipeline
+    orig_devices = dict(mqtt_executor.ALL_DEVICES)
+    orig_states = dict(mqtt_executor._device_states)
+    orig_ctx = pipeline._room_ctx
+
     from fastapi.testclient import TestClient
     from src.web import server
-    with TestClient(server.app) as c:
-        yield c, tmp_path
+    try:
+        with TestClient(server.app) as c:
+            yield c, tmp_path
+    finally:
+        mqtt_executor.ALL_DEVICES = orig_devices
+        mqtt_executor._device_states = orig_states
+        pipeline._room_ctx = orig_ctx
 
 
 def test_onboard_status_and_upload_and_apply_endpoints(api_client):
@@ -366,3 +377,46 @@ def test_onboard_analyze_base64_and_push_to_rpi(api_client):
         )
     assert push_res.status_code == 200
     assert push_res.json()["status"] == "ok"
+
+
+def test_dynamic_devices_state_and_ui_serving(api_client, monkeypatch):
+    client, tmp_path = api_client
+    monkeypatch.setenv("ENABLED_DEVICES", "*")
+
+    ctx = {
+        "room_name": "Living Room",
+        "devices": [
+            {"id": "fan1", "name": "Ceiling Fan", "type": "fan", "x": 0.45, "y": 0.2, "zone": "ceiling", "near": ["sofa"]},
+            {"id": "ac1", "name": "Split AC", "type": "ac", "x": 0.85, "y": 0.1, "zone": "wall", "near": ["window"]},
+            {"id": "lock1", "name": "Front Lock", "type": "lock", "x": 0.1, "y": 0.6, "zone": "door", "near": ["door"]},
+        ],
+    }
+    apply_res = client.post("/api/onboard/apply", json=ctx)
+    assert apply_res.status_code == 200
+    assert apply_res.json()["device_count"] == 3
+
+    dev_res = client.get("/api/devices")
+    assert dev_res.status_code == 200
+    devs = {d["id"]: d for d in dev_res.json()["devices"]}
+    assert set(devs.keys()) == {"fan1", "ac1", "lock1"}
+    assert devs["fan1"]["type"] == "fan"
+    assert devs["fan1"]["zone"] == "ceiling"
+    assert devs["fan1"]["x"] == 0.45
+    assert devs["fan1"]["y"] == 0.2
+    assert devs["fan1"]["near"] == ["sofa"]
+    assert devs["ac1"]["enabled"] is True
+
+    state_res = client.get("/state")
+    assert state_res.status_code == 200
+    s_devs = state_res.json()["devices"]
+    assert s_devs["lock1"]["type"] == "lock"
+    assert s_devs["lock1"]["enabled"] is True
+
+    dash_res = client.get("/")
+    assert dash_res.status_code == 200
+    assert "/api/onboard/upload" in dash_res.text or "Room Onboarding" in dash_res.text
+
+    twin_res = client.get("/twin/")
+    assert twin_res.status_code == 200
+    assert "DIGITAL TWIN" in twin_res.text
+

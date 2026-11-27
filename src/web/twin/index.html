@@ -3,147 +3,211 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>INOT Mark1 — Digital Twin [SIMULATION]</title>
+  <title>INOT Mark1 — Digital Twin</title>
   <style>
     :root {
-      --bg: #0d1117;
-      --surface: #161b22;
-      --border: #30363d;
-      --text: #e6edf3;
-      --muted: #8b949e;
-      --accent: #58a6ff;
-      --on: #3fb950;
-      --off: #484f58;
-      --warn: #d29922;
-      --danger: #f85149;
+      --bg: #f4f6f8;
+      --surface: #ffffff;
+      --surface-subtle: #f9fafb;
+      --border: #dfe3ea;
+      --text: #111827;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --on: #15803d;
+      --on-soft: #ecfdf3;
+      --on-border: #bbf7d0;
+      --off: #6b7280;
+      --warn: #b45309;
+      --danger: #b91c1c;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; min-height: 100vh; }
-
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
+    }
     header {
       background: var(--surface);
       border-bottom: 1px solid var(--border);
       padding: 12px 20px;
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 14px;
+      flex-wrap: wrap;
     }
+    .nav-links { display: flex; gap: 6px; margin-left: 8px; }
+    .nav-links a {
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      color: #4b5563;
+      padding: 4px 10px;
+      border-radius: 6px;
+    }
+    .nav-links a:hover { background: var(--surface-subtle); color: var(--text); }
+    .nav-links a.active { background: #eff6ff; color: var(--accent); font-weight: 600; }
     .sim-badge {
-      background: var(--warn);
-      color: #000;
+      background: #fef3c7;
+      color: #92400e;
+      border: 1px solid #fde68a;
       font-size: 11px;
       font-weight: 700;
       padding: 2px 8px;
       border-radius: 4px;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.4px;
     }
-    .conn-pill {
+    .conn-group {
       margin-left: auto;
       display: flex;
       align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .conn-pill {
+      display: flex;
+      align-items: center;
       gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 3px 10px;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #9ca3af; flex-shrink: 0; }
+    .dot.online { background: var(--on); }
+    .dot.warn { background: var(--warn); }
+
+    main { padding: 20px; max-width: 1180px; margin: 0 auto; }
+    h2 {
       font-size: 13px;
       color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 10px;
     }
-    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--off); flex-shrink: 0; }
-    .dot.online { background: var(--on); }
 
-    main { padding: 20px; max-width: 1100px; margin: 0 auto; }
-
-    h2 { font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
-
-    /* Floor plan */
     .floor-wrap {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 16px;
-      margin-bottom: 20px;
+      margin-bottom: 18px;
+    }
+    .floor-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .room-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
     }
     #floorCanvas {
       width: 100%;
-      max-height: 320px;
+      height: 300px;
       display: block;
       border: 1px solid var(--border);
-      border-radius: 4px;
-      background: #0a0f17;
+      border-radius: 6px;
+      background: #fbfcfd;
     }
 
-    /* Device cards */
     .devices-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
       gap: 12px;
-      margin-bottom: 20px;
+      margin-bottom: 18px;
     }
     .device-card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 8px;
-      padding: 14px;
+      padding: 13px;
       cursor: pointer;
       transition: border-color 0.15s, background 0.15s;
       user-select: none;
     }
     .device-card.on {
-      border-color: var(--on);
-      background: rgba(63,185,80,0.07);
+      border-color: var(--on-border);
+      background: var(--on-soft);
     }
-    .device-card:hover { border-color: var(--accent); }
+    .device-card.disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+    }
+    .device-card:hover:not(.disabled) { border-color: var(--accent); }
+    .dev-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
     .dev-name { font-size: 14px; font-weight: 600; }
-    .dev-id   { font-size: 11px; color: var(--muted); margin-top: 2px; }
-    .dev-type { font-size: 11px; color: var(--muted); }
+    .dev-id { font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; margin-top: 2px; }
+    .dev-type {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: #4b5563;
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 6px;
+    }
     .dev-state {
       margin-top: 10px;
       font-size: 12px;
       font-weight: 700;
       color: var(--off);
-      text-transform: uppercase;
     }
     .device-card.on .dev-state { color: var(--on); }
-    .dev-zone { font-size: 11px; color: var(--muted); margin-top: 4px; }
-    .dev-hint { font-size: 10px; color: var(--muted); margin-top: 6px; font-style: italic; }
+    .dev-meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    .dev-hint { font-size: 11px; color: var(--muted); margin-top: 6px; }
 
-    /* Command log */
     .log-wrap {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 8px;
-      padding: 0;
       overflow: hidden;
     }
     .log-header {
-      padding: 10px 16px;
+      padding: 10px 14px;
       border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
       gap: 8px;
     }
     .log-title { font-size: 13px; font-weight: 600; }
-    .log-clear { margin-left: auto; font-size: 12px; color: var(--muted); background: none; border: none; cursor: pointer; color: var(--accent); }
+    .log-clear {
+      margin-left: auto;
+      font-size: 12px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--accent);
+      font-weight: 600;
+    }
     #logList {
       list-style: none;
-      max-height: 220px;
+      max-height: 200px;
       overflow-y: auto;
-      padding: 8px 0;
-      font-family: monospace;
+      padding: 6px 0;
+      font-family: ui-monospace, monospace;
       font-size: 12px;
     }
     #logList li {
-      padding: 3px 16px;
-      border-bottom: 1px solid rgba(48,54,61,0.4);
+      padding: 3px 14px;
+      border-bottom: 1px solid #f1f3f5;
       display: flex;
       gap: 8px;
     }
-    .log-time { color: var(--muted); flex-shrink: 0; width: 80px; }
-    .log-msg  { color: var(--text); }
-    .log-msg.on  { color: var(--on); }
+    .log-time { color: var(--muted); flex-shrink: 0; width: 78px; }
+    .log-msg { color: var(--text); }
+    .log-msg.on { color: var(--on); }
     .log-msg.off { color: var(--danger); }
     .log-msg.sys { color: var(--accent); }
 
     footer {
       text-align: center;
-      padding: 20px;
+      padding: 16px;
       font-size: 11px;
       color: var(--muted);
     }
@@ -152,69 +216,95 @@
 <body>
   <header>
     <strong>INOT Mark1</strong>
-    <span class="sim-badge">SIMULATION</span>
-    <div class="conn-pill">
-      <div class="dot" id="connDot"></div>
-      <span id="connLabel">Connecting to MQTT…</span>
+    <span class="sim-badge">DIGITAL TWIN</span>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="/">Dashboard</a>
+      <a href="/twin" class="active">Digital Twin</a>
+    </nav>
+    <div class="conn-group">
+      <div class="conn-pill">
+        <div class="dot" id="apiWsDot"></div>
+        <span id="apiWsLabel">Server WS: connecting...</span>
+      </div>
+      <div class="conn-pill">
+        <div class="dot" id="connDot"></div>
+        <span id="connLabel">MQTT WS: connecting...</span>
+      </div>
     </div>
   </header>
 
   <main>
     <div class="floor-wrap">
-      <h2>Floor Plan — Device Positions</h2>
-      <canvas id="floorCanvas" height="280"></canvas>
+      <div class="floor-header">
+        <h2 style="margin-bottom:0">Floor Plan — Spatial Positions</h2>
+        <span class="room-label" id="twinRoomName">Room</span>
+      </div>
+      <canvas id="floorCanvas" height="300"></canvas>
     </div>
 
     <h2>Devices</h2>
     <div class="devices-grid" id="devGrid">
-      <p style="color:var(--muted);font-size:13px">Loading device registry…</p>
+      <p style="color:var(--muted);font-size:13px">Loading device registry...</p>
     </div>
 
     <div class="log-wrap">
       <div class="log-header">
-        <span class="log-title">📡 Command Log</span>
+        <span class="log-title">Event Log</span>
         <button class="log-clear" onclick="clearLog()">Clear</button>
       </div>
       <ul id="logList">
-        <li><span class="log-time">[INIT]</span><span class="log-msg sys">Digital twin loaded. Connecting via MQTT WebSocket…</span></li>
+        <li><span class="log-time">[INIT]</span><span class="log-msg sys">Digital twin initialized.</span></li>
       </ul>
     </div>
   </main>
 
   <footer>
-    INOT Mark1 Digital Twin — Simulation only. Physical hardware controlled via MQTT.
-    Broker: <span id="brokerInfo">—</span>
+    INOT Mark1 Digital Twin &bull; MQTT Broker WS: <span id="brokerInfo">—</span>
   </footer>
 
-  <!--
-    mqtt.js loaded from CDN; works fully offline once cached.
-    For air-gapped Pi: copy mqtt.min.js to twin/ and change src below.
-  -->
   <script src="https://unpkg.com/mqtt@5/dist/mqtt.min.js"></script>
   <script>
   'use strict';
 
-  // ── Config — read broker from meta tag or fall back to same host ──────
   const WS_PORT = 9001;
   const BROKER_HOST = location.hostname || 'localhost';
-  const BROKER_URL  = `ws://${BROKER_HOST}:${WS_PORT}`;
-  const API_BASE    = `${location.protocol}//${BROKER_HOST}:${location.port || 8000}`;
+  const BROKER_URL = `ws://${BROKER_HOST}:${WS_PORT}`;
+  const API_BASE = `${location.protocol}//${location.host}`;
+  const API_WS_URL = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`;
 
   document.getElementById('brokerInfo').textContent = BROKER_URL;
 
-  // ── State ──────────────────────────────────────────────────────────────
-  let mqttClient   = null;
-  let roomContext  = { devices: [] };
-  let deviceStates = {};   // { deviceId: 'ON'|'OFF' }
-  let deviceMeta   = {};   // { deviceId: { name, type, zone, x, y, ... } }
+  const TYPE_COLORS = {
+    light: '#d97706',
+    fan: '#0284c7',
+    ac: '#2563eb',
+    tv: '#7c3aed',
+    curtain: '#0d9488',
+    lock: '#dc2626',
+  };
 
-  // ── Log helpers ────────────────────────────────────────────────────────
+  let mqttClient = null;
+  let apiSocket = null;
+  let roomContext = { room_name: 'Room', devices: [] };
+  let deviceStates = {}; // { deviceId: 'ON'|'OFF' }
+  let deviceMeta = {};   // { deviceId: { name, type, zone, x, y, near, enabled, ... } }
+  let nameToId = {};     // { canonicalNameLower: deviceId }
+
   const logEl = document.getElementById('logList');
+
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
 
   function addLog(msg, cls = '') {
     const li = document.createElement('li');
-    const t  = new Date().toLocaleTimeString();
-    li.innerHTML = `<span class="log-time">${t}</span><span class="log-msg ${cls}">${msg}</span>`;
+    const t = new Date().toLocaleTimeString();
+    li.innerHTML = `<span class="log-time">${t}</span><span class="log-msg ${cls}">${escapeHtml(msg)}</span>`;
     logEl.prepend(li);
     while (logEl.children.length > 100) logEl.removeChild(logEl.lastChild);
   }
@@ -224,168 +314,247 @@
     addLog('Log cleared.', 'sys');
   }
 
-  // ── Load device list from /state API ───────────────────────────────────
   async function loadState() {
     try {
-      const r = await fetch(`${API_BASE}/state`);
-      if (!r.ok) throw new Error(r.status);
-      const data = await r.json();
+      const [stateRes, ctxRes] = await Promise.all([
+        fetch(`${API_BASE}/state`),
+        fetch(`${API_BASE}/context`).catch(() => null),
+      ]);
+      if (!stateRes.ok) throw new Error(stateRes.status);
+      const data = await stateRes.json();
 
-      // Also try to load room context for floor plan
-      try {
-        const rc = await fetch(`${API_BASE}/context`);
-        if (rc.ok) roomContext = await rc.json();
-      } catch (_) {}
+      if (ctxRes && ctxRes.ok) {
+        roomContext = await ctxRes.json();
+      } else {
+        roomContext = { room_name: 'Default', devices: [] };
+      }
 
-      // Build meta from /state payload
+      document.getElementById('twinRoomName').textContent = roomContext.room_name || 'Room';
+
+      deviceStates = {};
+      deviceMeta = {};
+      nameToId = {};
+
       for (const [id, info] of Object.entries(data.devices || {})) {
-        deviceStates[id] = info.state || 'OFF';
-        deviceMeta[id]   = info;
+        deviceStates[id] = (info.state || 'OFF').toUpperCase();
+        deviceMeta[id] = info;
+        if (info.name) nameToId[info.name.toLowerCase()] = id;
+        nameToId[id.toLowerCase()] = id;
       }
 
       renderDeviceCards();
       renderFloorPlan();
-      addLog(`Loaded ${Object.keys(deviceStates).length} device(s) from API.`, 'sys');
+      addLog(`Loaded ${Object.keys(deviceMeta).length} device(s) from /state.`, 'sys');
     } catch (e) {
-      addLog(`Failed to load /state: ${e}. Using MQTT retained msgs.`, 'sys');
+      addLog(`Failed to load /state: ${e}.`, 'sys');
     }
   }
 
-  // ── Render device cards ────────────────────────────────────────────────
   function renderDeviceCards() {
     const grid = document.getElementById('devGrid');
-    if (!Object.keys(deviceMeta).length) {
-      grid.innerHTML = '<p style="color:var(--muted);font-size:13px">No devices found.</p>';
+    const entries = Object.entries(deviceMeta);
+    if (!entries.length) {
+      grid.innerHTML = '<p style="color:var(--muted);font-size:13px">No devices found. Onboard a room from the Dashboard.</p>';
       return;
     }
     grid.innerHTML = '';
-    for (const [id, meta] of Object.entries(deviceMeta)) {
+    for (const [id, meta] of entries) {
       const state = (deviceStates[id] || 'OFF').toUpperCase();
+      const isEnabled = meta.enabled !== false;
+      const nearStr = Array.isArray(meta.near) && meta.near.length ? meta.near.join(', ') : '—';
+      const posStr = typeof meta.x === 'number' && typeof meta.y === 'number'
+        ? `(${meta.x.toFixed(2)}, ${meta.y.toFixed(2)})`
+        : '—';
+
       const card = document.createElement('div');
-      card.className = `device-card ${state === 'ON' ? 'on' : ''}`;
+      card.className = `device-card ${state === 'ON' ? 'on' : ''} ${isEnabled ? '' : 'disabled'}`;
       card.dataset.id = id;
       card.innerHTML = `
-        <div class="dev-name">${meta.label || meta.name || id}</div>
-        <div class="dev-id">${id}</div>
-        <div class="dev-type">${meta.type || 'device'}</div>
-        <div class="dev-state">${state}</div>
-        <div class="dev-zone">Zone: ${meta.zone || '—'}</div>
-        <div class="dev-hint">Click to toggle</div>
+        <div class="dev-top">
+          <div>
+            <div class="dev-name">${escapeHtml(meta.label || meta.name || id)}</div>
+            <div class="dev-id">${escapeHtml(id)}</div>
+          </div>
+          <span class="dev-type">${escapeHtml(meta.type || 'light')}</span>
+        </div>
+        <div class="dev-state">${escapeHtml(state)}${isEnabled ? '' : ' (DISABLED)'}</div>
+        <div class="dev-meta">Zone: ${escapeHtml(meta.zone || 'room')} &bull; Pos: ${escapeHtml(posStr)}</div>
+        <div class="dev-meta">Near: ${escapeHtml(nearStr)}</div>
+        <div class="dev-hint">${isEnabled ? 'Click to toggle' : 'Not enabled in ENABLED_DEVICES'}</div>
       `;
-      card.addEventListener('click', () => toggleDevice(id));
+      if (isEnabled) {
+        card.addEventListener('click', () => toggleDevice(id));
+      }
       grid.appendChild(card);
     }
   }
 
   function updateCard(id, state) {
-    const card = document.querySelector(`.device-card[data-id="${id}"]`);
+    const card = document.querySelector(`.device-card[data-id="${CSS.escape(id)}"]`);
     if (!card) return;
-    card.classList.toggle('on', state === 'ON');
+    const norm = state.toUpperCase();
+    card.classList.toggle('on', norm === 'ON');
+    const meta = deviceMeta[id] || {};
+    const isEnabled = meta.enabled !== false;
     const stateEl = card.querySelector('.dev-state');
-    if (stateEl) stateEl.textContent = state;
+    if (stateEl) stateEl.textContent = `${norm}${isEnabled ? '' : ' (DISABLED)'}`;
   }
 
-  // ── Floor plan rendering (canvas) ─────────────────────────────────────
   function renderFloorPlan() {
     const canvas = document.getElementById('floorCanvas');
     const W = canvas.offsetWidth || 800;
-    canvas.width  = W;
+    canvas.width = W;
     const H = canvas.height;
     const ctx = canvas.getContext('2d');
 
     ctx.clearRect(0, 0, W, H);
 
-    // Room outline
-    ctx.strokeStyle = '#30363d';
-    ctx.lineWidth   = 2;
-    ctx.strokeRect(16, 16, W - 32, H - 32);
-    ctx.fillStyle = '#0d1117';
-    ctx.fillRect(17, 17, W - 34, H - 34);
-
-    const devices = roomContext.devices || Object.entries(deviceMeta).map(([id, m]) => ({
-      id,
-      name: m.label || m.name || id,
-      type: m.type || 'light',
-      x: m.x || 0.5,
-      y: m.y || 0.5,
-      zone: m.zone || '',
-      near: m.near || [],
-    }));
-
-    // Draw zone labels (collect unique zones)
-    const zones = {};
-    for (const d of devices) {
-      if (d.zone && !zones[d.zone]) zones[d.zone] = [];
-      if (d.zone) zones[d.zone].push(d);
+    // Light grid background
+    ctx.strokeStyle = '#eef1f5';
+    ctx.lineWidth = 1;
+    for (let gx = 20; gx < W - 20; gx += 40) {
+      ctx.beginPath(); ctx.moveTo(gx, 16); ctx.lineTo(gx, H - 16); ctx.stroke();
+    }
+    for (let gy = 20; gy < H - 20; gy += 40) {
+      ctx.beginPath(); ctx.moveTo(16, gy); ctx.lineTo(W - 16, gy); ctx.stroke();
     }
 
-    // Draw devices
+    // Room outline
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(16, 16, W - 32, H - 32);
+
+    const devices = (roomContext.devices && roomContext.devices.length)
+      ? roomContext.devices
+      : Object.entries(deviceMeta).map(([id, m]) => ({
+          id,
+          name: m.label || m.name || id,
+          type: m.type || 'light',
+          x: typeof m.x === 'number' ? m.x : 0.5,
+          y: typeof m.y === 'number' ? m.y : 0.5,
+          zone: m.zone || '',
+          near: m.near || [],
+        }));
+
     for (const d of devices) {
-      const px = 16 + d.x * (W - 32);
-      const py = 16 + d.y * (H - 32);
+      const xNorm = Math.max(0, Math.min(1, Number(d.x ?? 0.5)));
+      const yNorm = Math.max(0, Math.min(1, Number(d.y ?? 0.5)));
+      const px = 28 + xNorm * (W - 56);
+      const py = 28 + yNorm * (H - 56);
       const st = (deviceStates[d.id] || 'OFF').toUpperCase();
       const isOn = st === 'ON';
+      const typeKey = (d.type || 'light').toLowerCase();
+      const accent = TYPE_COLORS[typeKey] || '#2563eb';
 
-      // Glow
       if (isOn) {
-        const grd = ctx.createRadialGradient(px, py, 2, px, py, 32);
-        grd.addColorStop(0, 'rgba(63,185,80,0.35)');
-        grd.addColorStop(1, 'rgba(63,185,80,0)');
-        ctx.fillStyle = grd;
+        ctx.fillStyle = 'rgba(21, 128, 61, 0.14)';
         ctx.beginPath();
-        ctx.arc(px, py, 32, 0, Math.PI * 2);
+        ctx.arc(px, py, 24, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      // Device dot
       ctx.beginPath();
-      ctx.arc(px, py, 10, 0, Math.PI * 2);
-      ctx.fillStyle = isOn ? '#3fb950' : '#484f58';
+      ctx.arc(px, py, 12, 0, Math.PI * 2);
+      ctx.fillStyle = isOn ? '#15803d' : '#ffffff';
       ctx.fill();
-      ctx.strokeStyle = isOn ? '#5bdb6e' : '#6e7681';
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = isOn ? '#15803d' : accent;
+      ctx.lineWidth = 2;
       ctx.stroke();
 
-      // Label
-      ctx.fillStyle = '#e6edf3';
-      ctx.font = '11px system-ui';
+      // Type initial inside marker
+      ctx.fillStyle = isOn ? '#ffffff' : accent;
+      ctx.font = 'bold 10px system-ui';
       ctx.textAlign = 'center';
-      ctx.fillText(d.name || d.id, px, py + 24);
+      ctx.textBaseline = 'middle';
+      ctx.fillText(typeKey.slice(0, 2).toUpperCase(), px, py);
+
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = '#111827';
+      ctx.font = '600 11px system-ui';
+      ctx.fillText(d.name || d.id, px, py + 25);
+
+      ctx.fillStyle = '#6b7280';
       ctx.font = '10px system-ui';
-      ctx.fillStyle = '#8b949e';
-      ctx.fillText(st, px, py + 36);
+      ctx.fillText(`${d.zone || 'room'} • ${st}`, px, py + 37);
     }
   }
 
-  // ── MQTT publish to toggle ─────────────────────────────────────────────
-  function toggleDevice(id) {
+  async function toggleDevice(id) {
     const current = (deviceStates[id] || 'OFF').toUpperCase();
-    const next    = current === 'ON' ? 'OFF' : 'ON';
-    const topic   = `inot/devices/${id}/set`;
+    const next = current === 'ON' ? 'OFF' : 'ON';
+    const topic = `inot/devices/${id}/set`;
+
     if (mqttClient && mqttClient.connected) {
       mqttClient.publish(topic, next, { qos: 1 });
-      addLog(`→ ${topic} = ${next}`, next === 'ON' ? 'on' : 'off');
-    } else {
-      // Optimistic local update
-      deviceStates[id] = next;
-      updateCard(id, next);
+      addLog(`-> ${topic} = ${next}`, next === 'ON' ? 'on' : 'off');
+      return;
+    }
+
+    // Fallback to FastAPI REST toggle (works in dry-run & over LAN without MQTT WS)
+    try {
+      const meta = deviceMeta[id] || {};
+      const targetName = meta.name || id;
+      const res = await fetch(`${API_BASE}/api/device/${encodeURIComponent(targetName)}/toggle`, {
+        method: 'POST',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const newState = (data.new_state || next).toUpperCase();
+      deviceStates[id] = newState;
+      updateCard(id, newState);
       renderFloorPlan();
-      addLog(`[DRY] ${id} = ${next} (not connected to broker)`, 'sys');
+      addLog(`[API] ${id} -> ${newState}`, newState === 'ON' ? 'on' : 'off');
+    } catch (err) {
+      addLog(`Toggle failed for ${id}: ${err.message}`, 'off');
     }
   }
 
-  // ── Connection status display ──────────────────────────────────────────
   function setConnStatus(online) {
-    document.getElementById('connDot').className   = `dot ${online ? 'online' : ''}`;
+    document.getElementById('connDot').className = `dot ${online ? 'online' : 'warn'}`;
     document.getElementById('connLabel').textContent = online
-      ? `Connected — ${BROKER_URL}`
-      : 'Disconnected from MQTT broker';
+      ? `MQTT WS: connected`
+      : 'MQTT WS: standby';
   }
 
-  // ── MQTT over WebSocket ────────────────────────────────────────────────
+  function setApiWsStatus(online) {
+    document.getElementById('apiWsDot').className = `dot ${online ? 'online' : 'warn'}`;
+    document.getElementById('apiWsLabel').textContent = online
+      ? 'Server WS: connected'
+      : 'Server WS: reconnecting...';
+  }
+
+  function connectApiWs() {
+    apiSocket = new WebSocket(API_WS_URL);
+    apiSocket.onopen = () => {
+      setApiWsStatus(true);
+      addLog('FastAPI /ws connected.', 'sys');
+    };
+    apiSocket.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'device_state' && msg.data) {
+          const devName = msg.data.device || '';
+          const id = nameToId[devName.toLowerCase()] || devName.toLowerCase();
+          const st = (msg.data.state || 'OFF').toUpperCase();
+          deviceStates[id] = st;
+          updateCard(id, st);
+          renderFloorPlan();
+        } else if (msg.type === 'context_updated') {
+          addLog('Context updated — reloading devices and floor plan.', 'sys');
+          loadState();
+        }
+      } catch (_) {}
+    };
+    apiSocket.onclose = () => {
+      setApiWsStatus(false);
+      setTimeout(connectApiWs, 2500);
+    };
+  }
+
   function connectMqtt() {
     if (typeof mqtt === 'undefined') {
-      addLog('mqtt.js not loaded (CDN unreachable). Using REST-only mode.', 'sys');
+      setConnStatus(false);
+      addLog('mqtt.js unavailable; using Server WS + REST fallback.', 'sys');
       return;
     }
 
@@ -393,20 +562,19 @@
       clientId: `inot-twin-${Math.random().toString(16).slice(2, 8)}`,
       keepalive: 30,
       reconnectPeriod: 5000,
-      connectTimeout: 8000,
+      connectTimeout: 5000,
     });
 
     mqttClient.on('connect', () => {
       setConnStatus(true);
       addLog('MQTT WebSocket connected.', 'sys');
       mqttClient.subscribe('inot/devices/+/state', { qos: 1 });
-      mqttClient.subscribe('inot/online',          { qos: 1 });
-      mqttClient.subscribe('inot/esp32/status',    { qos: 1 });
+      mqttClient.subscribe('inot/online', { qos: 1 });
+      mqttClient.subscribe('inot/esp32/status', { qos: 1 });
     });
 
     mqttClient.on('message', (topic, payloadBuf) => {
       const payload = payloadBuf.toString().trim().toUpperCase();
-
       if (topic === 'inot/online') {
         addLog(`System: ${payload}`, 'sys');
         return;
@@ -416,37 +584,31 @@
         return;
       }
 
-      // inot/devices/<id>/state
       const m = topic.match(/^inot\/devices\/(.+)\/state$/);
       if (m) {
         const id = m[1];
         deviceStates[id] = payload;
-
-        // Ensure we have meta for this device
         if (!deviceMeta[id]) {
-          deviceMeta[id] = { name: id, type: 'device', zone: '', x: 0.5, y: 0.5 };
+          deviceMeta[id] = { name: id, type: 'device', zone: 'room', x: 0.5, y: 0.5, enabled: true };
           renderDeviceCards();
         } else {
           updateCard(id, payload);
         }
-
         renderFloorPlan();
-        addLog(`${id} → ${payload}`, payload === 'ON' ? 'on' : 'off');
+        addLog(`${id} -> ${payload}`, payload === 'ON' ? 'on' : 'off');
       }
     });
 
-    mqttClient.on('disconnect', () => { setConnStatus(false); addLog('Disconnected.', 'sys'); });
-    mqttClient.on('error', (err)  => { addLog(`MQTT error: ${err.message}`, 'sys'); });
-    mqttClient.on('reconnect',    () => { addLog('Reconnecting…', 'sys'); });
+    mqttClient.on('disconnect', () => setConnStatus(false));
+    mqttClient.on('error', () => setConnStatus(false));
   }
 
-  // ── Boot ───────────────────────────────────────────────────────────────
   window.addEventListener('load', async () => {
     await loadState();
+    connectApiWs();
     connectMqtt();
   });
 
-  // Re-render on resize
   let resizeTimer;
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
@@ -455,4 +617,3 @@
   </script>
 </body>
 </html>
-
