@@ -183,6 +183,8 @@ def is_connected() -> bool:
 
 def enabled_devices() -> List[str]:
     env_str = os.getenv("ENABLED_DEVICES", "Light1,Light2")
+    if env_str.strip().lower() in ("*", "all"):
+        return list(ALL_DEVICES.keys())
     active = []
     for item in env_str.split(","):
         name = item.strip()

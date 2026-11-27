@@ -51,6 +51,12 @@ def _get_executor():
     return _mqtt_executor
 
 
+def reload_context() -> None:
+    """Clear the cached room context so the next command reloads from disk."""
+    global _room_ctx
+    _room_ctx = None
+
+
 def _load_room_context() -> Dict[str, Any]:
     """Load room context, falling back to a minimal default."""
     global _room_ctx

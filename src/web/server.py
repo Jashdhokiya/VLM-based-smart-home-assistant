@@ -11,6 +11,7 @@ FastAPI backend providing:
 
 from __future__ import annotations
 
+import base64
 import csv
 import json
 import os
@@ -20,13 +21,14 @@ import asyncio
 import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 from dotenv import load_dotenv
 from fastapi import (
     FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File,
-    HTTPException, Request,
+    Form, Body, HTTPException, Request,
 )
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -34,6 +36,7 @@ from fastapi.staticfiles import StaticFiles
 load_dotenv()
 
 from src.hardware import mqtt_executor
+from src.onboarding import onboarding_engine
 from src.core import safe_parse
 from src.core import metrics
 
@@ -214,6 +217,54 @@ def _load_ctx_raw() -> Optional[dict]:
     return None
 
 
+def _apply_room_context(data: dict) -> dict:
+    """Validate, persist to ROOM_CONTEXT_PATH, reload registries, and notify WS clients."""
+    try:
+        from src.core import room_context as rc
+        ok, errors = rc.validate(data)
+        if not ok:
+            raise HTTPException(
+                status_code=422,
+                detail={"message": "room_context schema validation failed", "errors": errors},
+            )
+    except ImportError:
+        pass
+
+    p = _ctx_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    print(f"[SERVER] room_context.json saved to {p}")
+
+    mqtt_executor.reload_devices()
+
+    try:
+        import src.pipeline as pipeline  # type: ignore[import]
+        if hasattr(pipeline, "reload_context"):
+            pipeline.reload_context()
+    except ImportError:
+        pass
+
+    devices = data.get("devices", [])
+    device_ids = [d.get("id") for d in devices]
+    manager.threadsafe_broadcast({
+        "type": "context_updated",
+        "timestamp": time.time(),
+        "data": {
+            "room_name": data.get("room_name"),
+            "device_count": len(devices),
+            "device_ids": device_ids,
+        },
+    })
+
+    return {
+        "status": "ok",
+        "saved_to": str(p),
+        "room_name": data.get("room_name"),
+        "device_count": len(devices),
+        "device_ids": device_ids,
+    }
+
+
 # ---------------------------------------------------------------------------
 # API: system status
 # ---------------------------------------------------------------------------
@@ -261,31 +312,7 @@ async def post_context(request: Request):
     except Exception:
         raise HTTPException(status_code=400, detail="Body must be valid JSON")
 
-    try:
-        from src.core import room_context as rc
-        ok, errors = rc.validate(data)
-        if not ok:
-            raise HTTPException(
-                status_code=422,
-                detail={"message": "room_context schema validation failed", "errors": errors},
-            )
-    except ImportError:
-        pass
-
-    p = _ctx_path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    print(f"[SERVER] room_context.json saved to {p}")
-
-    mqtt_executor.reload_devices()
-
-    devices = data.get("devices", [])
-    return {
-        "status": "ok",
-        "saved_to": str(p),
-        "device_count": len(devices),
-        "device_ids": [d.get("id") for d in devices],
-    }
+    return _apply_room_context(data)
 
 
 @app.get("/context")
@@ -294,6 +321,260 @@ def get_context():
     if data is None:
         raise HTTPException(status_code=404, detail="No room_context.json found")
     return data
+
+
+# ---------------------------------------------------------------------------
+# API: Pi-safe Cloud Onboarding Engine (open endpoints)
+# ---------------------------------------------------------------------------
+
+async def _run_onboarding_pipeline(
+    *,
+    image_bytes: bytes,
+    room_name: Optional[str] = None,
+    device_hints: Optional[str] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    save: bool = False,
+    push_to_rpi: bool = False,
+    rpi_url: Optional[str] = None,
+    include_raw: bool = False,
+) -> Dict[str, Any]:
+    """Shared handler for multipart upload and base64 JSON onboarding requests."""
+    try:
+        onboarding_engine.detect_image_mime(image_bytes)
+        await run_in_threadpool(onboarding_engine.save_scene_image, image_bytes)
+        result = await run_in_threadpool(
+            onboarding_engine.generate_context,
+            image_bytes,
+            room_name=room_name,
+            device_hints=device_hints,
+            provider=provider,
+            model=model,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Cloud onboarding failed: {exc}")
+
+    draft_record = {
+        "created_at": time.time(),
+        "provider": result["provider"],
+        "model": result["model"],
+        "mime_type": result["mime_type"],
+        "image_bytes": result["image_bytes"],
+        "duration_ms": result["duration_ms"],
+        "validation": result["validation"],
+        "context": result["context"],
+    }
+    await run_in_threadpool(onboarding_engine.save_draft, draft_record)
+
+    apply_result = None
+    if save:
+        if not result["validation"]["valid"]:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "Generated context failed room_context validation; not saved.",
+                    "errors": result["validation"]["errors"],
+                    "context": result["context"],
+                },
+            )
+        apply_result = _apply_room_context(result["context"])
+
+    rpi_push_result = None
+    if push_to_rpi:
+        try:
+            rpi_push_result = await run_in_threadpool(
+                onboarding_engine.push_context_to_rpi,
+                result["context"],
+                rpi_url,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Failed to push context to RPi: {exc}")
+
+    response: Dict[str, Any] = {
+        "status": "ok",
+        "provider": result["provider"],
+        "model": result["model"],
+        "mime_type": result["mime_type"],
+        "image_bytes": result["image_bytes"],
+        "duration_ms": result["duration_ms"],
+        "image_url": "/api/scene-image",
+        "validation": result["validation"],
+        "context": result["context"],
+        "saved": bool(apply_result),
+        "apply_result": apply_result,
+        "pushed_to_rpi": bool(rpi_push_result),
+        "rpi_push": rpi_push_result,
+    }
+    if include_raw:
+        response["raw"] = result.get("raw", "")
+    return response
+
+
+@app.get("/api/onboard/status")
+def onboard_status():
+    """Readiness and configuration status of the Pi-safe cloud onboarding engine."""
+    return onboarding_engine.get_status()
+
+
+@app.post("/api/onboard/upload")
+async def onboard_upload(
+    image: UploadFile = File(...),
+    room_name: Optional[str] = Form(None),
+    device_hints: Optional[str] = Form(None),
+    provider: Optional[str] = Form(None),
+    model: Optional[str] = Form(None),
+    save: bool = Form(False),
+    push_to_rpi: bool = Form(False),
+    rpi_url: Optional[str] = Form(None),
+    include_raw: bool = Form(False),
+):
+    """
+    Upload a room image (multipart/form-data), send it to the configured cloud
+    VLM/endpoint, and receive validated ``room_context`` JSON.
+    """
+    image_bytes = await image.read()
+    return await _run_onboarding_pipeline(
+        image_bytes=image_bytes,
+        room_name=room_name,
+        device_hints=device_hints,
+        provider=provider,
+        model=model,
+        save=save,
+        push_to_rpi=push_to_rpi,
+        rpi_url=rpi_url,
+        include_raw=include_raw,
+    )
+
+
+@app.post("/api/onboard/analyze")
+async def onboard_analyze_base64(payload: dict):
+    """
+    JSON base64 alternative to ``/api/onboard/upload``.
+    Body: ``{"image_base64": "...", "room_name": "...", "device_hints": "...", ...}``.
+    """
+    raw_b64 = str(payload.get("image_base64") or "").strip()
+    if not raw_b64:
+        raise HTTPException(status_code=400, detail="'image_base64' is required.")
+    if raw_b64.startswith("data:") and "," in raw_b64:
+        raw_b64 = raw_b64.split(",", 1)[1]
+    try:
+        image_bytes = base64.b64decode(raw_b64, validate=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 image data.")
+
+    return await _run_onboarding_pipeline(
+        image_bytes=image_bytes,
+        room_name=payload.get("room_name"),
+        device_hints=payload.get("device_hints"),
+        provider=payload.get("provider"),
+        model=payload.get("model"),
+        save=bool(payload.get("save", False)),
+        push_to_rpi=bool(payload.get("push_to_rpi", False)),
+        rpi_url=payload.get("rpi_url"),
+        include_raw=bool(payload.get("include_raw", False)),
+    )
+
+
+@app.get("/api/onboard/draft")
+def onboard_get_draft():
+    """Return the most recently generated onboarding context draft."""
+    draft = onboarding_engine.load_draft()
+    if draft is None:
+        raise HTTPException(status_code=404, detail="No onboarding draft generated yet.")
+    return draft
+
+
+@app.post("/api/onboard/validate")
+def onboard_validate_context(payload: dict, normalize: bool = True):
+    """Validate (and optionally normalize) a candidate ``room_context`` JSON payload."""
+    candidate = payload.get("context") if isinstance(payload.get("context"), dict) else payload
+    try:
+        from src.core import room_context as rc
+        data = onboarding_engine.normalize_context(candidate) if normalize else candidate
+        ok, errors = rc.validate(data)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return {
+        "valid": ok,
+        "errors": errors,
+        "context": data,
+    }
+
+
+@app.post("/api/onboard/apply")
+async def onboard_apply(
+    payload: Optional[dict] = Body(default=None),
+    rpi_url: Optional[str] = None,
+):
+    """
+    Commit a generated/edited ``room_context`` JSON locally (saving to
+    ``ROOM_CONTEXT_PATH`` and reloading MQTT + pipeline), and optionally forward
+    it to a target Raspberry Pi.
+    """
+    target_rpi = rpi_url
+    if payload is None or payload == {}:
+        draft = onboarding_engine.load_draft()
+        if not draft or "context" not in draft:
+            raise HTTPException(
+                status_code=404,
+                detail="No request body provided and no onboarding draft available.",
+            )
+        ctx = draft["context"]
+    else:
+        if not target_rpi and isinstance(payload.get("rpi_url"), str):
+            target_rpi = payload.get("rpi_url")
+        ctx = payload.get("context") if isinstance(payload.get("context"), dict) else payload
+
+    result = _apply_room_context(ctx)
+
+    if target_rpi:
+        try:
+            result["rpi_push"] = await run_in_threadpool(
+                onboarding_engine.push_context_to_rpi, ctx, target_rpi
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Saved locally, but RPi push failed: {exc}")
+
+    return result
+
+
+@app.post("/api/onboard/push-to-rpi")
+async def onboard_push_to_rpi(payload: Optional[dict] = Body(default=None)):
+    """
+    Push a ``room_context`` JSON (from request body, active ``room_context.json``,
+    or latest onboarding draft) to a Raspberry Pi's ``POST /context`` endpoint.
+    """
+    data = payload or {}
+    rpi_url = data.get("rpi_url")
+    ctx = data.get("context")
+    if ctx is None and "devices" in data:
+        ctx = data
+    if ctx is None:
+        ctx = _load_ctx_raw()
+    if ctx is None:
+        draft = onboarding_engine.load_draft()
+        if draft and isinstance(draft.get("context"), dict):
+            ctx = draft["context"]
+    if ctx is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No room_context available to push (provide 'context' in body or onboard first).",
+        )
+
+    try:
+        push_res = await run_in_threadpool(
+            onboarding_engine.push_context_to_rpi, ctx, rpi_url
+        )
+        return {"status": "ok", **push_res}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to push context to RPi: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -585,16 +866,25 @@ def trigger_server_mic():
 
 @app.get("/api/spatial")
 def get_spatial_info():
+    scene_img = onboarding_engine._scene_image_path()
     content = ""
     if SPATIAL_FILE.exists():
         content = SPATIAL_FILE.read_text(encoding="utf-8")
     else:
-        content = "No spatial_information.txt found. Using room_context.json if available."
+        ctx = _load_ctx_raw()
+        if ctx:
+            try:
+                from src.core import room_context as rc
+                content = rc.build_prompt_context(ctx)
+            except Exception:
+                content = json.dumps(ctx, indent=2)
+        else:
+            content = "No spatial_information.txt found. Using room_context.json if available."
     return {
         "spatial_text": content,
         "has_annotated_image": ANNOTATED_IMG.exists(),
-        "has_scene_image": SCENE_IMG.exists(),
-        "image_url": "/api/scene-image" if (ANNOTATED_IMG.exists() or SCENE_IMG.exists()) else None,
+        "has_scene_image": scene_img.exists() or SCENE_IMG.exists(),
+        "image_url": "/api/scene-image" if (ANNOTATED_IMG.exists() or scene_img.exists() or SCENE_IMG.exists()) else None,
     }
 
 
@@ -602,6 +892,9 @@ def get_spatial_info():
 def get_scene_image():
     if ANNOTATED_IMG.exists():
         return FileResponse(ANNOTATED_IMG, media_type="image/jpeg")
+    scene_img = onboarding_engine._scene_image_path()
+    if scene_img.exists():
+        return FileResponse(scene_img, media_type="image/jpeg")
     if SCENE_IMG.exists():
         return FileResponse(SCENE_IMG, media_type="image/jpeg")
     raise HTTPException(status_code=404, detail="No scene image available.")

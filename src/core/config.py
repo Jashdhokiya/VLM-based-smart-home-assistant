@@ -114,6 +114,21 @@ class Settings:
     # ── Groq fallback for LLM ─────────────────────────────────────────
     llm_groq_fallback: bool = False     # Try Groq if local LLM fails validation
 
+    # ── Cloud Onboarding Engine (Pi-safe) ─────────────────────────────
+    onboarding_provider: str = "groq"   # groq | gemini | openai | cloud_url
+    groq_vision_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
+    gemini_api_key: str = ""
+    gemini_vision_model: str = "gemini-2.5-flash"
+    openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_vision_model: str = "gpt-4o-mini"
+    cloud_onboarding_url: str = ""
+    cloud_onboarding_api_key: str = ""
+    onboarding_timeout_s: float = 45.0
+    onboarding_max_image_mb: float = 10.0
+    onboarding_max_image_dim: int = 1280
+    rpi_server_url: str = ""
+
     # ── AI Provider (legacy compat) ───────────────────────────────────
     ai_provider: str = "groq"
 
@@ -175,6 +190,20 @@ class Settings:
             dashboard_port=_int("DASHBOARD_PORT", 8000),
             # Fallback
             llm_groq_fallback=_bool("LLM_GROQ_FALLBACK", False),
+            # Cloud Onboarding
+            onboarding_provider=_str("ONBOARDING_PROVIDER", "groq").lower(),
+            groq_vision_model=_str("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct"),
+            gemini_api_key=_str("GEMINI_API_KEY", ""),
+            gemini_vision_model=_str("GEMINI_VISION_MODEL", "gemini-2.5-flash"),
+            openai_api_key=_str("OPENAI_API_KEY", ""),
+            openai_base_url=_str("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+            openai_vision_model=_str("OPENAI_VISION_MODEL", "gpt-4o-mini"),
+            cloud_onboarding_url=_str("CLOUD_ONBOARDING_URL", ""),
+            cloud_onboarding_api_key=_str("CLOUD_ONBOARDING_API_KEY", ""),
+            onboarding_timeout_s=_float("ONBOARDING_TIMEOUT_S", 45.0),
+            onboarding_max_image_mb=_float("ONBOARDING_MAX_IMAGE_MB", 10.0),
+            onboarding_max_image_dim=_int("ONBOARDING_MAX_IMAGE_DIM", 1280),
+            rpi_server_url=_str("RPI_SERVER_URL", ""),
             ai_provider=_str("AI_PROVIDER", "groq").lower(),
         )
 
