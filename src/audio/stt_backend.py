@@ -13,6 +13,8 @@ Live mic recording is optional and handled separately.
 from __future__ import annotations
 
 import os
+import subprocess
+import tempfile
 import wave
 from pathlib import Path
 from typing import Optional
@@ -56,30 +58,71 @@ def _load_vosk():
     return _vosk_model
 
 
+def _ensure_mono_wav(audio_path: str) -> tuple[str, bool]:
+    """Return a 16-bit mono WAV path, converting via ffmpeg if needed."""
+    try:
+        with wave.open(audio_path, "rb") as wf:
+            if wf.getnchannels() == 1 and wf.getsampwidth() == 2:
+                return audio_path, False
+    except Exception:
+        pass
+
+    fd, tmp_wav = tempfile.mkstemp(suffix=".wav")
+    os.close(fd)
+    try:
+        proc = subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", audio_path,
+                "-ar", str(settings.audio_rate),
+                "-ac", "1",
+                "-c:a", "pcm_s16le",
+                tmp_wav,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(f"ffmpeg conversion failed: {proc.stderr.strip()[:200]}")
+        return tmp_wav, True
+    except Exception:
+        if os.path.exists(tmp_wav):
+            os.remove(tmp_wav)
+        raise
+
+
 def _transcribe_vosk(wav_path: str) -> str:
-    """Transcribe WAV using Vosk offline recognizer."""
+    """Transcribe audio (WAV, webm, etc.) using Vosk offline recognizer."""
     import json as _json
     import vosk  # type: ignore[import-untyped]
 
     model = _load_vosk()
+    target_wav, is_temp = _ensure_mono_wav(wav_path)
+    wf = None
+    try:
+        wf = wave.open(target_wav, "rb")
+        if wf.getnchannels() != 1 or wf.getsampwidth() != 2:
+            raise ValueError("Vosk requires mono 16-bit WAV")
 
-    wf = wave.open(wav_path, "rb")
-    if wf.getnchannels() != 1 or wf.getsampwidth() != 2:
-        raise ValueError("Vosk requires mono 16-bit WAV")
+        rec = vosk.KaldiRecognizer(model, wf.getframerate())
+        rec.SetWords(False)
 
-    rec = vosk.KaldiRecognizer(model, wf.getframerate())
-    rec.SetWords(False)
+        while True:
+            data = wf.readframes(4000)
+            if len(data) == 0:
+                break
+            rec.AcceptWaveform(data)
 
-    text_parts = []
-    while True:
-        data = wf.readframes(4000)
-        if len(data) == 0:
-            break
-        rec.AcceptWaveform(data)
-
-    result = _json.loads(rec.FinalResult())
-    wf.close()
-    return result.get("text", "").strip()
+        result = _json.loads(rec.FinalResult())
+        return result.get("text", "").strip()
+    finally:
+        if wf is not None:
+            wf.close()
+        if is_temp and os.path.exists(target_wav):
+            try:
+                os.remove(target_wav)
+            except Exception:
+                pass
 
 
 def _load_faster_whisper():
