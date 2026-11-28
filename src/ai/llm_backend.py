@@ -28,6 +28,8 @@ def _make_system_prompt(room_context_text: str, device_ids: List[str]) -> str:
         f"Valid device IDs: [{devices_str}].\n"
         "Respond ONLY with a JSON object mapping device IDs to actions.\n"
         "Actions: \"on\", \"off\", \"set:<value>\" (e.g. \"set:50\" for brightness/speed).\n"
+        "Conventions: curtain \"open\"=\"on\", \"close\"=\"off\". "
+        "cold/chilly->fan/ac \"off\"; hot/stuffy->fan/ac \"on\"; dark->light \"on\"; bedtime/sleep->light/tv/curtain \"off\".\n"
         "Example: {\"light1\": \"on\", \"fan1\": \"off\"}\n"
         "If no action is needed, respond with {}.\n"
         "Do NOT include any explanation, markdown, or extra text.\n\n"

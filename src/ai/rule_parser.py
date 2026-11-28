@@ -303,7 +303,48 @@ def parse(text, room_ctx):
             commands[d] = action
     for d in exclusions:
         commands.pop(d, None)
+    if not commands and not exclusions:
+        commands = _comfort_fallback(t, room)
     return commands or None
+
+
+_COLD_RE = re.compile(r"\b(cold|chilly|freezing|shivering|frosty)\b")
+_HOT_RE = re.compile(r"\b(hot|stuffy|oven|sweating|humid|warm|fresh air|airflow)\b")
+_DARK_RE = re.compile(r"\b(too dark|so dark|dark in|gloomy|cant see|pitch black)\b")
+_GLARE_RE = re.compile(r"\b(blinding|sun in my eyes|privacy)\b")
+_MORNING_RE = re.compile(r"\b(wake up|morning sun|let the .*sun in|let daylight in)\b")
+
+
+def _comfort_fallback(t, room):
+    """Deterministic fallback for pure comfort/implicit commands without explicit device names."""
+    out = {}
+    if _COLD_RE.search(t):
+        for d in room.ids:
+            if room.devices[d]["type"] in ("fan", "ac"):
+                out[d] = "off"
+        return out
+    if _HOT_RE.search(t):
+        for d in room.ids:
+            if room.devices[d]["type"] in ("fan", "ac"):
+                out[d] = "on"
+        return out
+    if _MORNING_RE.search(t):
+        for d in room.ids:
+            if room.devices[d]["type"] == "curtain":
+                out[d] = "on"
+        return out
+    if _DARK_RE.search(t):
+        target_type = "curtain" if ("daylight" in t or "sun" in t) else "light"
+        for d in room.ids:
+            if room.devices[d]["type"] == target_type:
+                out[d] = "on"
+        return out
+    if _GLARE_RE.search(t):
+        for d in room.ids:
+            if room.devices[d]["type"] == "curtain":
+                out[d] = "off"
+        return out
+    return out
 
 
 def load_room(path=None):

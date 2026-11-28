@@ -52,6 +52,7 @@ def _run_rule_parser(text: str, ctx: Dict[str, Any]) -> Optional[Dict[str, str]]
 
 # ── Globals ───────────────────────────────────────────────────────────
 _room_ctx: Optional[Dict[str, Any]] = None
+_room_ctx_mtime: Optional[float] = None
 _mqtt_executor = None  # lazy import to avoid circular deps
 
 
@@ -65,15 +66,14 @@ def _get_executor():
 
 def reload_context() -> None:
     """Clear the cached room context so the next command reloads from disk."""
-    global _room_ctx
+    global _room_ctx, _room_ctx_mtime
     _room_ctx = None
+    _room_ctx_mtime = None
 
 
 def _load_room_context() -> Dict[str, Any]:
-    """Load room context, falling back to a minimal default."""
-    global _room_ctx
-    if _room_ctx is not None:
-        return _room_ctx
+    """Load room context, auto-reloading if the file on disk changed."""
+    global _room_ctx, _room_ctx_mtime
 
     # Check os.environ first, then fallback to settings
     from src.core.config import settings as _s
@@ -86,13 +86,20 @@ def _load_room_context() -> Dict[str, Any]:
             ctx_path = cand
 
     if ctx_path.exists():
+        mtime = ctx_path.stat().st_mtime
+        if _room_ctx is not None and _room_ctx_mtime == mtime:
+            return _room_ctx
         try:
             _room_ctx = room_context.load(ctx_path)
+            _room_ctx_mtime = mtime
             devs = room_context.device_list(_room_ctx)
             print(f"[PIPELINE] Loaded room context: {len(devs)} device(s) from {ctx_path}")
             return _room_ctx
         except Exception as e:
             print(f"[PIPELINE] [WARN] Failed to load room context: {e}")
+
+    if _room_ctx is not None:
+        return _room_ctx
 
     # Fallback: build minimal context from ENABLED_DEVICES
     print("[PIPELINE] No room_context.json — using default device list from env")
