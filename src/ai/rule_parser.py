@@ -217,9 +217,16 @@ def _split_exceptions(t):
     return " ".join(main), (exc[0] if exc else "")
 
 
+_COMPLEX_COND_RE = re.compile(
+    r"\b(if|when|whenever|unless|because|since|maybe|probably|might|could you check)\b"
+)
+
+
 def parse(text, room_ctx):
     room = room_ctx if isinstance(room_ctx, RoomModel) else RoomModel(room_ctx)
     t = _normalize(text, room)
+    if _COMPLEX_COND_RE.search(t):
+        return None
     main, exc = _split_exceptions(t)
     exclusions = set()
     if exc:
@@ -294,6 +301,8 @@ def parse(text, room_ctx):
         if action is None:
             continue
         if not devs:
+            if seen_action:
+                return None
             continue
         seen_action = True
         last_action = action
@@ -315,8 +324,15 @@ _GLARE_RE = re.compile(r"\b(blinding|sun in my eyes|privacy)\b")
 _MORNING_RE = re.compile(r"\b(wake up|morning sun|let the .*sun in|let daylight in)\b")
 
 
+_COMFORT_MULTI_RE = re.compile(
+    r"[,;]|\b(and|but|except|then|after|if|when|unless|so|because|while|although)\b"
+)
+
+
 def _comfort_fallback(t, room):
-    """Deterministic fallback for pure comfort/implicit commands without explicit device names."""
+    """Deterministic fallback ONLY for short, single-clause comfort commands."""
+    if len(t.split()) > 8 or _COMFORT_MULTI_RE.search(t):
+        return {}
     out = {}
     if _COLD_RE.search(t):
         for d in room.ids:
